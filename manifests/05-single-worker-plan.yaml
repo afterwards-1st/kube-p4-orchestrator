@@ -1,0 +1,23 @@
+# 单 Worker 选择实验：用于观察运行时指标如何改变调度决策。
+# 该对象只生成规划结果，不会创建 Job 或发送真实任务。
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: single-worker-metrics-plan
+  namespace: kube-orchestrator
+spec:
+  image: busybox:1.36
+  execution: plan
+  strategy: minExpectedCompletionTime
+
+  # 16 个任务刚好组成一个完整批次，不产生最后一个残缺批次的等待时间。
+  taskCount: 16
+  maxWorkers: 1
+
+  # 本实验暂时不申请 CPU，仅比较 Worker 的服务速率、队列和网络延迟。
+  # 这是规划算法实验参数，不会被提交成真实 Pod 的资源请求。
+  resources:
+    cpu: "0"
+    memory: 2Gi
+
+  workerSelector: {}

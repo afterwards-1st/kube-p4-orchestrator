@@ -1,0 +1,30 @@
+[Unit]
+Description=Kubernetes managed live P4 control plane
+Requires=global-gateway.service
+After=network-online.target global-gateway.service p4-k8s-dryrun.service
+Conflicts=p4-k8s-dryrun.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/wzt/k8s_learning/p4-controller
+Environment=P4_LIVE_CONFIRM=YES
+Environment=P4_EXPECT_DRY_RUN=false
+UMask=0077
+ExecStartPre=/root/wzt/k8s_learning/p4-controller/prepare_systemd_handover.sh
+ExecStart=/root/wzt/k8s_learning/p4-controller/run_live_candidate_controller.sh
+ExecStartPost=/root/wzt/k8s_learning/p4-controller/check_live_control_api.sh
+ExecStopPost=/root/wzt/k8s_learning/p4-controller/restore_systemd_handover.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=20
+TimeoutStopSec=20
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+# 双重许可执行实验：清单本身允许 apply，但 Controller 全局默认为 plan。
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: controlled-job-demo
+  namespace: kube-orchestrator
+spec:
+  image: ubuntu-backend:22.04-python
+  command: ["python3", "-c", "print('controlled execution succeeded')"]
+  execution: apply
+  strategy: nodeScore
+  resources:
+    cpu: "10m"
+    memory: 16Mi
+    gpu: 0
+  preferredNodeLabels:
+    kubernetes.io/hostname: node194

@@ -1,0 +1,16 @@
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: owned-job-demo
+  namespace: kube-orchestrator
+spec:
+  image: ubuntu-backend:22.04-python
+  command: ["python3", "-c", "print('owned generation one')"]
+  execution: apply
+  strategy: nodeScore
+  resources:
+    cpu: "10m"
+    memory: 16Mi
+    gpu: 0
+  preferredNodeLabels:
+    kubernetes.io/hostname: node194

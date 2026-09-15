@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runtime-metrics
+  namespace: kube-orchestrator
+data:
+  runtime_metrics.json: |
+    {
+      "default": {
+        "service_rate_tasks_per_sec": 80,
+        "queue_depth": 0,
+        "network_latency_ms": 1,
+        "batch_size": 16,
+        "batch_timeout_ms": 5000
+      },
+      "backends": {
+        "216": {"service_rate_tasks_per_sec": 100},
+        "217": {"service_rate_tasks_per_sec": 100},
+        "218": {"service_rate_tasks_per_sec": 100},
+        "226": {"service_rate_tasks_per_sec": 75},
+        "227": {"service_rate_tasks_per_sec": 75},
+        "228": {"service_rate_tasks_per_sec": 75}
+      }
+    }

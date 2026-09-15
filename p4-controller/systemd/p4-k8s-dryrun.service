@@ -1,0 +1,23 @@
+[Unit]
+Description=Guarded dry-run P4 control API for Kubernetes
+After=network-online.target
+Conflicts=p4-k8s-control.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/wzt/k8s_learning/p4-controller
+Environment=P4_EXPECT_DRY_RUN=true
+UMask=0077
+ExecStart=/root/wzt/k8s_learning/p4-controller/run_guarded_candidate_controller.sh
+ExecStartPost=/root/wzt/k8s_learning/p4-controller/check_live_control_api.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

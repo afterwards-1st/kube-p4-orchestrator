@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ubuntu-194-216
+  namespace: default
+  labels:
+    app: ubuntu-194
+    slot: "216"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ubuntu-194
+      slot: "216"
+  template:
+    metadata:
+      labels:
+        app: ubuntu-194
+        slot: "216"
+      annotations:
+        k8s.v1.cni.cncf.io/networks: '[{"name":"tor-194","interface":"net1","ips":["10.10.1.216"],"mac":"d2:a0:d7:1d:e9:89"}]'
+        orchestrator.wzt.io/metrics-target: metrics-receiver.kube-orchestrator.svc.cluster.local
+    spec:
+      serviceAccountName: resource-collector
+      nodeName: node194
+      containers:
+        - name: ubuntu
+          image: ubuntu-backend:22.04-python
+          imagePullPolicy: IfNotPresent
+          stdin: true
+          tty: true
+          securityContext:
+            capabilities:
+              add: [NET_ADMIN]
+          env:
+            - name: METRICS_REPORT_HOST
+              value: metrics-receiver.kube-orchestrator.svc.cluster.local
+            - name: METRICS_REPORT_PORT
+              value: "9999"
+            - name: METRICS_REPORT_INTERVAL
+              value: "1"
+          ports:
+            - name: task-udp
+              containerPort: 9000
+              protocol: UDP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          command:
+            - bash
+            - -lc
+            - >-
+              ip link set dev net1 address d2:a0:d7:1d:e9:89 &&
+              exec python3 -u /opt/bsy/batch_server_report_sim.py
+              --backend-id 216
+              --report-ip "${METRICS_REPORT_HOST}"
+              --report-port "${METRICS_REPORT_PORT}"
+              --report-interval "${METRICS_REPORT_INTERVAL}"
+              --batch-size 16 --batch-timeout 5
+              --base-time 0.10 --per-task-time 0.01
+          resources:
+            requests:
+              cpu: "26"
+              memory: 80Gi
+            limits:
+              cpu: "26"
+              memory: 80Gi
+          volumeMounts:
+            - name: backend-script
+              mountPath: /opt/bsy
+              readOnly: true
+      volumes:
+        - name: backend-script
+          configMap:
+            name: batch-backend-script

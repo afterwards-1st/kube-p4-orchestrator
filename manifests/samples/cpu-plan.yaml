@@ -1,0 +1,14 @@
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: cpu-plan
+  namespace: kube-orchestrator
+spec:
+  image: busybox:1.36
+  command: ["sh", "-c", "echo planned-by-kube-orchestrator"]
+  execution: plan
+  resources:
+    cpu: 100m
+    memory: 64Mi
+  preferredNodeLabels:
+    kubernetes.io/os: linux

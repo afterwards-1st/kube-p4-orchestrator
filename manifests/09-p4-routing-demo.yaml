@@ -1,0 +1,18 @@
+# P4 控制面接入样例。Job execution 保持 plan；P4 路由需要任务级与全局级双重许可。
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: p4-routing-demo
+  namespace: kube-orchestrator
+spec:
+  image: busybox:1.36
+  execution: plan
+  strategy: minExpectedCompletionTime
+  taskCount: 64
+  maxWorkers: 2
+  resources:
+    cpu: "30"
+    memory: 100Gi
+  workerSelector: {}
+  routing:
+    mode: apply

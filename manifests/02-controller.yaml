@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller
+  namespace: kube-orchestrator
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-orchestrator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-orchestrator
+    spec:
+      serviceAccountName: controller
+      nodeSelector:
+        kubernetes.io/hostname: node194
+      containers:
+        - name: controller
+          image: kube-orchestrator:0.5.1
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: runtime-metrics
+              mountPath: /etc/kube-orchestrator
+              readOnly: true
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: EXECUTION_MODE
+              value: plan
+            - name: EXCLUDED_NODES
+              value: r740gpu
+            - name: WORKER_NAMESPACE
+              value: default
+            - name: WORKER_SLOTS
+              value: "216,217,218,226,227,228"
+            - name: RUNTIME_METRICS_PATH
+              value: /etc/kube-orchestrator/runtime_metrics.json
+            - name: RUNTIME_METRICS_URL
+              value: http://metrics-receiver:8080/v1/backends
+            - name: RUNTIME_METRICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: metrics-receiver-auth
+                  key: token
+            - name: RUNTIME_METRICS_TIMEOUT_SECONDS
+              value: "2"
+            - name: P4_ROUTING_MODE
+              value: plan
+            - name: P4_ROUTE_OWNER
+              value: p4-routing-demo
+            - name: P4_CONTROL_URL
+              value: http://192.168.199.114:18100
+            - name: P4_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: p4-control-auth
+                  key: token
+            - name: P4_CONTROL_TIMEOUT_SECONDS
+              value: "2"
+            - name: P4_STATUS_CACHE_SECONDS
+              value: "5"
+            - name: RESOURCE_REFRESH_SECONDS
+              value: "15"
+            - name: METRICS_POLL_SECONDS
+              value: "2"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: runtime-metrics
+          configMap:
+            name: runtime-metrics

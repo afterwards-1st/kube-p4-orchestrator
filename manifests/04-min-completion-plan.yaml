@@ -1,0 +1,25 @@
+# 第一份多 Worker 预计完成时间规划样例。
+# 该对象只生成调度计划，不会创建 Job，也不会向 Worker 发送任务。
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: multi-worker-plan
+  namespace: kube-orchestrator
+spec:
+  # CRD 当前要求必须提供镜像；plan 模式不会真正启动这个镜像。
+  image: busybox:1.36
+  execution: plan
+  strategy: minExpectedCompletionTime
+
+  # 模拟 64 个可以拆分、并行处理的子任务。
+  taskCount: 64
+  maxWorkers: 2
+
+  # 任意单个测试 Worker 都无法满足该总需求，216 与 226 合并后可以满足。
+  resources:
+    cpu: "30"
+    memory: 100Gi
+
+  # 当前不设置 workerSelector。Controller 仍只会读取 WORKER_SLOTS 白名单
+  # 中的 216、217、218、226、227、228，不会把其他 Pod 当成 Worker。
+  workerSelector: {}

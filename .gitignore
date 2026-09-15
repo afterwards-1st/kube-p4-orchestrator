@@ -1,0 +1,38 @@
+# Python build and cache
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local environments and editor settings
+.venv/
+venv/
+.env
+.env.*
+.vscode/
+.idea/
+
+# Credentials and Kubernetes secrets
+secrets/
+*token*
+!test_*token*.py
+!test_*token*.md
+*.key
+*.pem
+*.crt
+
+# P4 runtime state and captured operational output
+p4-controller/runtime/
+p4-controller/*.pid
+p4-controller/*.log
+p4-controller/pre-live-*.cli
+p4-controller/post-live-*.txt
+
+# Images, archives and local experiment output
+*.tar
+*.tgz
+*.zip
+artifacts/
+reports/
