@@ -92,14 +92,7 @@ python -m unittest -v test_p4_route_snapshot.py test_single_writer_control.py
 
 ## 安全说明
 
-本仓库不包含服务器密码、P4 控制令牌、Kubernetes Secret 内容、运行时快照、日志或镜像文件。请使用自己的 Secret、节点标签、Worker 配置和实验网络。
+请使用自己的 Secret、节点标签、Worker 配置和实验网络。
 
 P4 live 控制器仅适用于已明确授权的实验设备。不要将其直接用于未知或共享的生产网络。
 
-## 已知边界与后续方向
-
-- 当前精确组合枚举适合小规模候选 Worker；大规模环境可改为 Top-K 预筛选、批处理感知水位分配和局部修正。
-- P4 底层写表为 clear 加 add；下一阶段将增加写后实际表项回读、验证与补偿回滚。
-- 当前主要验证单 BMv2 和两个核心 Worker，尚未覆盖多交换机、高可用和 TLS。
-
-详细的设计取舍、实验过程和后续路线见 docs/PROJECT_FULL_DETAILS.md。
