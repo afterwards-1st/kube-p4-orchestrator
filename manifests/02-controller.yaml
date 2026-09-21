@@ -20,7 +20,7 @@ spec:
         kubernetes.io/hostname: node194
       containers:
         - name: controller
-          image: kube-orchestrator:0.5.1
+          image: kube-orchestrator:0.5.2
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - name: runtime-metrics

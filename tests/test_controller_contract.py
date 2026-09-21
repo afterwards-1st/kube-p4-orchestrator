@@ -59,7 +59,7 @@ class ControllerStrategyContractTests(unittest.TestCase):
             "- name: RUNTIME_METRICS_TIMEOUT_SECONDS",
             self.deployment,
         )
-        self.assertIn("image: kube-orchestrator:0.5.1", self.deployment)
+        self.assertIn("image: kube-orchestrator:0.5.2", self.deployment)
         self.assertIn("- name: P4_ROUTING_MODE", self.deployment)
         self.assertIn("- name: P4_ROUTE_OWNER", self.deployment)
         self.assertIn("- name: P4_CONTROL_URL", self.deployment)

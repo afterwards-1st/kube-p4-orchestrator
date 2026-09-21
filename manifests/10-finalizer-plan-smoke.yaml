@@ -1,0 +1,18 @@
+# Finalizer 冒烟测试：执行与路由均为 plan，不创建 Job，也不写入 P4。
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: finalizer-plan-smoke
+  namespace: kube-orchestrator
+spec:
+  image: busybox:1.36
+  execution: plan
+  strategy: minExpectedCompletionTime
+  taskCount: 1
+  maxWorkers: 1
+  resources:
+    cpu: "1"
+    memory: 1Gi
+  workerSelector: {}
+  routing:
+    mode: plan
