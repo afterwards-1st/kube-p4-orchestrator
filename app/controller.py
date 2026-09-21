@@ -190,6 +190,49 @@ class ComputeTaskController:
             if key != "decisionTrace"
         }
 
+    @staticmethod
+    def _lifecycle_conditions(status: dict) -> list:
+        """Return deterministic Conditions without clock-driven status writes."""
+        phase = str(status.get("phase", ""))
+        scheduled = phase not in ("", "Unschedulable", "Terminating")
+        execution_allowed = bool(status.get("executionAllowed", False))
+        if phase == "Unschedulable":
+            execution_reason = "NoEligibleWorker"
+        elif phase == "Terminating":
+            execution_reason = "Terminating"
+        elif phase == "Failed":
+            execution_reason = "JobFailed"
+        elif phase in ("Running", "Succeeded"):
+            execution_reason = "JobActive" if phase == "Running" else "JobSucceeded"
+        elif not execution_allowed:
+            execution_reason = "PlanOnly"
+        else:
+            execution_reason = "AwaitingJob"
+        execution_ready = phase in ("Running", "Succeeded")
+        return [
+            {
+                "type": "Scheduled",
+                "status": "True" if scheduled else "False",
+                "reason": "PlacementSelected" if scheduled else "NoEligibleWorker",
+                "message": "A placement decision exists" if scheduled else "No eligible placement exists",
+            },
+            {
+                "type": "ExecutionReady",
+                "status": "True" if execution_ready else "False",
+                "reason": execution_reason,
+                "message": "Workload is active or completed" if execution_ready else "Workload is not executing",
+            },
+        ]
+
+    @classmethod
+    def _with_lifecycle_status(cls, task: dict, status: dict) -> dict:
+        """Attach observed generation and Conditions to every status result."""
+        result = dict(status)
+        result["observedGeneration"] = int(
+            task.get("metadata", {}).get("generation", 0) or 0
+        )
+        result["conditions"] = cls._lifecycle_conditions(result)
+        return result
     @classmethod
     def _decision_change_reason(
         cls,
@@ -446,6 +489,7 @@ class ComputeTaskController:
             )
             if routing_status is not None:
                 status["routing"] = routing_status
+            status = self._with_lifecycle_status(task, status)
             previous_status = task.get("status", {})
             decision_trace = self._decision_trace(
                 previous_status,
@@ -494,6 +538,7 @@ class ComputeTaskController:
                 status["jobName"] = job_name
                 status["phase"] = self._job_phase(job)
 
+        status = self._with_lifecycle_status(task, status)
         previous_status = task.get("status", {})
         decision_trace = self._decision_trace(
             previous_status,

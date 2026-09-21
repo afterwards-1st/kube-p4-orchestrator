@@ -26,6 +26,8 @@ class CRDContractTests(unittest.TestCase):
         for field in (
             "observedGeneration:",
             "executionAllowed:",
+            "conditions:",
+            "reason:",
             "selectedWorkers:",
             "flowId:",
             "backendId:",

@@ -101,7 +101,21 @@ spec:
                   type: string
                 jobName:
                   type: string
-                candidateEvidence:
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status, reason, message]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      reason:
+                        type: string
+                      message:
+                        type: string                candidateEvidence:
                   type: array
                   items:
                     type: object
