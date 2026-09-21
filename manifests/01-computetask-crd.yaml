@@ -115,7 +115,8 @@ spec:
                       reason:
                         type: string
                       message:
-                        type: string                candidateEvidence:
+                        type: string
+                candidateEvidence:
                   type: array
                   items:
                     type: object

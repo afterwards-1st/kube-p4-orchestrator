@@ -67,6 +67,12 @@ class CRDContractTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, self.manifest)
 
+    def test_condition_schema_does_not_merge_with_next_field(self):
+        self.assertIn(
+            "type: string\n                candidateEvidence:",
+            self.manifest,
+        )
+        self.assertNotIn("type: string                candidateEvidence:", self.manifest)
     def test_existing_node_strategy_remains_default(self):
         self.assertIn(
             "enum: [nodeScore, minExpectedCompletionTime]",
