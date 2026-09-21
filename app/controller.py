@@ -17,6 +17,7 @@ from kubernetes import client, config
 
 from app.multi_worker_planner import plan_multi_worker_task
 from app.p4_control import P4ControlClient, normalize_routes
+from app.p4_lifecycle import FINALIZER, cleanup_p4_routing
 from app.runtime_metrics import load_combined_runtime_metrics
 from app.scoring import NodeSnapshot, ResourceRequest, choose_node, score_candidates
 
@@ -233,6 +234,60 @@ class ComputeTaskController:
         )
         result["conditions"] = cls._lifecycle_conditions(result)
         return result
+
+    def _ensure_p4_finalizer(self, task: dict) -> bool:
+        metadata = task["metadata"]
+        finalizers = list(metadata.get("finalizers") or [])
+        if FINALIZER in finalizers or metadata.get("deletionTimestamp"):
+            return False
+        finalizers.append(FINALIZER)
+        self.custom.patch_namespaced_custom_object(
+            GROUP, VERSION, NAMESPACE, PLURAL, metadata["name"],
+            {"metadata": {"finalizers": finalizers}},
+        )
+        metadata["finalizers"] = finalizers
+        logging.info("installed P4 cleanup finalizer for %s", metadata["name"])
+        return True
+
+    def _remove_p4_finalizer(self, task: dict) -> bool:
+        metadata = task["metadata"]
+        finalizers = list(metadata.get("finalizers") or [])
+        if FINALIZER not in finalizers:
+            return False
+        finalizers.remove(FINALIZER)
+        self.custom.patch_namespaced_custom_object(
+            GROUP, VERSION, NAMESPACE, PLURAL, metadata["name"],
+            {"metadata": {"finalizers": finalizers}},
+        )
+        metadata["finalizers"] = finalizers
+        logging.info("removed P4 cleanup finalizer for %s", metadata["name"])
+        return True
+
+    def _reconcile_deletion(self, task: dict) -> bool:
+        metadata = task["metadata"]
+        if FINALIZER not in (metadata.get("finalizers") or []):
+            return False
+        completed, cleanup_phase, cleanup_reason = cleanup_p4_routing(
+            task, getattr(self, "p4", None), P4_ROUTE_OWNER,
+        )
+        previous_status = task.get("status", {})
+        status = dict(previous_status)
+        status["phase"] = "Terminating"
+        status["cleanup"] = {
+            "phase": cleanup_phase,
+            "reason": cleanup_reason,
+        }
+        status = self._with_lifecycle_status(task, status)
+        trace = self._decision_trace(previous_status, status)
+        changed = self._patch_status_if_changed(task, status, trace)
+        if not completed:
+            logging.warning(
+                "P4 cleanup for %s is waiting: %s",
+                metadata["name"], cleanup_reason,
+            )
+            return changed
+        removed = self._remove_p4_finalizer(task)
+        return changed or removed
     @classmethod
     def _decision_change_reason(
         cls,
@@ -476,6 +531,10 @@ class ComputeTaskController:
         metadata = task["metadata"]
         spec = task.get("spec", {})
 
+        if metadata.get("deletionTimestamp"):
+            return self._reconcile_deletion(task)
+        if isinstance(spec.get("routing"), dict):
+            self._ensure_p4_finalizer(task)
         if spec.get("strategy", "nodeScore") == "minExpectedCompletionTime":
             status = plan_multi_worker_task(
                 task,
@@ -599,6 +658,19 @@ class ComputeTaskController:
             # so a successful reconcile clears an error from an earlier one.
             "error": "",
         }
+        previous_routing = (
+            (task.get("status", {}) or {}).get("routing", {}) or {}
+        )
+        was_applied = bool(previous_routing.get("applied", False))
+        if "previousRoutes" in previous_routing:
+            try:
+                result["previousRoutes"] = normalize_routes(
+                    previous_routing.get("previousRoutes", [])
+                )
+            except (TypeError, ValueError) as error:
+                result["phase"] = "Invalid"
+                result["error"] = "invalid pre-apply route snapshot: {}".format(error)
+                return result
         try:
             desired = self._desired_p4_routes(selected_workers)
         except (TypeError, ValueError) as error:
@@ -642,7 +714,10 @@ class ComputeTaskController:
         result["observedRoutes"] = observed
         result["inSync"] = observed == desired
 
+        performed_write = False
         if result["writeAllowed"] and not result["inSync"]:
+            if "previousRoutes" not in result:
+                result["previousRoutes"] = observed
             remote = p4.replace_routes(
                 desired,
                 "computetask/{}/generation/{}".format(
@@ -654,6 +729,7 @@ class ComputeTaskController:
                 result["phase"] = "Failed"
                 result["error"] = remote.get("error", "P4 route replace failed")
                 return result
+            performed_write = True
             result["controlOwner"] = str(remote.get("control_owner", ""))
             result["dryRun"] = bool(remote.get("dry_run", False))
             result["observedRoutes"] = normalize_routes(
@@ -662,11 +738,14 @@ class ComputeTaskController:
             result["inSync"] = result["observedRoutes"] == desired
 
         if result["writeAllowed"] and result["inSync"]:
-            result["applied"] = not result.get("dryRun", False)
-            result["phase"] = (
-                "DryRunValidated" if result.get("dryRun", False)
-                else "Applied"
-            )
+            live = not result.get("dryRun", False)
+            result["applied"] = live and (was_applied or performed_write)
+            if not live:
+                result["phase"] = "DryRunValidated"
+            elif result["applied"]:
+                result["phase"] = "Applied"
+            else:
+                result["phase"] = "InSync"
         return result
 
     @staticmethod

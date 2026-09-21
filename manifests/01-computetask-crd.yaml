@@ -193,6 +193,19 @@ spec:
                           backendId:
                             type: integer
                             minimum: 1
+                    previousRoutes:
+                      type: array
+                      items:
+                        type: object
+                        required: [flowId, backendId]
+                        properties:
+                          flowId:
+                            type: integer
+                            minimum: 1
+                            maximum: 255
+                          backendId:
+                            type: integer
+                            minimum: 1
                     inSync:
                       type: boolean
                     applied:
@@ -204,6 +217,15 @@ spec:
                     dryRun:
                       type: boolean
                     error:
+                      type: string
+                cleanup:
+                  type: object
+                  required: [phase, reason]
+                  properties:
+                    phase:
+                      type: string
+                      enum: [NotRequired, Restored, Skipped, WaitingForP4]
+                    reason:
                       type: string
                 decisionTrace:
                   type: object

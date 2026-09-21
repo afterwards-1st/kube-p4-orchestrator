@@ -49,4 +49,4 @@ kubectl get ctask <任务名> -n kube-orchestrator \
 
 ## 当前边界
 
-这一版先建立一致、可测试的状态契约；不改变默认的 `plan` 安全边界，也不创建额外 Job 或 P4 路由。下一步会在此基础上加入 Finalizer 和“仅恢复自己仍拥有的 P4 路由快照”的删除回收流程。
+当前版本已在该状态契约上加入 P4 Finalizer。删除带路由配置的任务时，`phase` 会进入 `Terminating`，具体结果记录在 `status.cleanup`。完整流程见 `P4_FINALIZER_CLEANUP.md`。默认的 `plan` 安全边界仍保持不变。

@@ -46,6 +46,7 @@ class CRDContractTests(unittest.TestCase):
             "routeOwner:",
             "desiredRoutes:",
             "observedRoutes:",
+            "previousRoutes:",
             "inSync:",
             "controlOwner:",
             "controlMode:",
@@ -54,6 +55,15 @@ class CRDContractTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, self.manifest)
 
+    def test_cleanup_status_contract_is_declared(self):
+        for field in (
+            "cleanup:",
+            "WaitingForP4",
+            "Restored",
+            "Skipped",
+        ):
+            with self.subTest(field=field):
+                self.assertIn(field, self.manifest)
     def test_decision_trace_status_fields_are_declared(self):
         for field in (
             "decisionTrace:",

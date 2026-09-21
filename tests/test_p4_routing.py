@@ -141,5 +141,50 @@ class P4RoutingStatusTests(unittest.TestCase):
         controller.p4.replace_routes.assert_not_called()
 
 
+class P4RouteOwnershipTests(P4RoutingStatusTests):
+    def test_live_write_records_previous_routes_for_cleanup(self):
+        controller = self.make_controller([
+            {"flow_id": 1, "backend_id": 226},
+        ])
+        controller.p4.get_routes.return_value["dry_run"] = False
+        controller.p4.replace_routes.return_value = {
+            "ok": True,
+            "dry_run": False,
+            "control_owner": "server-114",
+            "routes": [
+                {"flow_id": 1, "backend_id": 216},
+                {"flow_id": 2, "backend_id": 226},
+            ],
+        }
+        with patch.object(controller_module, "P4_ROUTING_MODE", "apply"), patch.object(
+            controller_module, "P4_ROUTE_OWNER", "p4-routing-demo"
+        ):
+            status = controller._p4_routing_status(
+                self.task(), self.workers()
+            )
+
+        self.assertEqual("Applied", status["phase"])
+        self.assertTrue(status["applied"])
+        self.assertEqual(
+            [{"flowId": 1, "backendId": 226}],
+            status["previousRoutes"],
+        )
+
+    def test_matching_external_route_is_not_claimed_as_applied(self):
+        controller = self.make_controller([
+            {"flow_id": 1, "backend_id": 216},
+            {"flow_id": 2, "backend_id": 226},
+        ])
+        controller.p4.get_routes.return_value["dry_run"] = False
+        with patch.object(controller_module, "P4_ROUTING_MODE", "apply"), patch.object(
+            controller_module, "P4_ROUTE_OWNER", "p4-routing-demo"
+        ):
+            status = controller._p4_routing_status(
+                self.task(), self.workers()
+            )
+
+        self.assertEqual("InSync", status["phase"])
+        self.assertFalse(status["applied"])
+        controller.p4.replace_routes.assert_not_called()
 if __name__ == "__main__":
     unittest.main()
