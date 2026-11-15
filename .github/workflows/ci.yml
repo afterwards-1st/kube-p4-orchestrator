@@ -50,8 +50,9 @@ jobs:
       - name: 运行端到端脚本
         run: bash scripts/e2e_kind.sh
         env:
-          CONTROLLER_IMAGE: kube-orchestrator:ci
-          AGENT_IMAGE: kube-orchestrator/node-agent:ci
+          # 必须与 scripts/e2e/values-kind.yaml 的镜像标签一致，否则 kind load 后 Pod 仍会拉取远端
+          CONTROLLER_IMAGE: kube-orchestrator:e2e
+          AGENT_IMAGE: kube-orchestrator/node-agent:e2e
       - name: 失败时导出诊断（写入 Job Summary，匿名可见）
         if: failure()
         run: |
