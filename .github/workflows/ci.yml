@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    name: 单元测试（Python + C++）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Python 测试
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s tests -v
+      - name: C++ agent 测试
+        run: |
+          cmake -S agent -B agent/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build agent/build -j
+          ctest --test-dir agent/build --output-on-failure
+
+  chart:
+    name: Helm lint 与渲染
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - run: helm lint charts/kube-orchestrator
+      - run: helm template ci charts/kube-orchestrator >/dev/null
+
+  e2e:
+    name: kind 端到端（CRD reconcile + 指标链路）
+    needs: [tests, chart]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: helm/kind-action@v1
+        with:
+          install_only: true
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: 运行端到端脚本
+        run: bash scripts/e2e_kind.sh
+        env:
+          CONTROLLER_IMAGE: kube-orchestrator:ci
+          AGENT_IMAGE: kube-orchestrator/node-agent:ci
+      - name: 失败时导出控制器日志
+        if: failure()
+        run: |
+          kubectl -n kube-orchestrator logs deploy/kube-orch-kube-orchestrator-controller || true
+          kubectl -n kube-orchestrator get computetask -o yaml || true
+
+  images:
+    name: 构建并推送镜像（main）
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [tests, chart]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: 计算小写镜像名
+        run: |
+          echo "CONTROLLER_IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "AGENT_IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/node-agent:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: 登录 GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 构建并推送 controller / receiver 镜像
+        run: |
+          docker build -t "$CONTROLLER_IMAGE" .
+          docker push "$CONTROLLER_IMAGE"
+      - name: 构建并推送 node-agent 镜像
+        run: |
+          docker build -t "$AGENT_IMAGE" agent
+          docker push "$AGENT_IMAGE"
