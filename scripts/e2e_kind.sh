@@ -34,6 +34,8 @@ log_step() {
 fail() {
   echo "E2E-FAIL: $*" >&2
   annotate error "$(printf '%s' "$*" | tr '\n' ' ' | cut -c1-280)"
+  annotate error "pods: $(kubectl get pods -A --no-headers 2>&1 | head -15 | tr '\n' '|' | cut -c1-700)"
+  annotate error "pull-msg: $(kubectl get pods -A -o json 2>/dev/null | jq -r '[.items[] | select(.status.containerStatuses[]?.state.waiting.message != null) | {n: .metadata.name, m: .status.containerStatuses[].state.waiting.message}] | tostring' | cut -c1-600)"
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
       echo "### E2E 失败点"
@@ -163,7 +165,14 @@ print(u.urlopen(r, timeout=2).read().decode())")"
   fi
   sleep 2
 done
-[[ -n "$FRESH" ]] || fail "agent 上报未在 60 秒内进入 fresh 状态"
+[[ -n "$FRESH" ]] || {
+  AGENT_LOGS="$(kubectl -n "$NAMESPACE" logs ds/"$FULLNAME-node-agent" --tail=25 2>&1 | tail -25 || true)"
+  fail "agent 上报未在 60 秒内进入 fresh 状态
+=== agent 日志尾部 ===
+$AGENT_LOGS
+=== /v1/backends 最后响应 ===
+${BODY:-(exec 无输出)}"
+}
 METRICS="$(kubectl -n "$NAMESPACE" exec "deploy/$RECEIVER_DEPLOY" -- python3 -c \
   "import urllib.request as u
 r = u.Request('http://127.0.0.1:8080/metrics', headers={'Authorization': 'Bearer $TOKEN'})
