@@ -57,8 +57,8 @@ fail() {
 build_and_load() {
   local tag="$1" context="$2" logfile="$3"
   if ! docker build -t "$tag" "$context" >"$logfile" 2>&1; then
-    tail -25 "$logfile" >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
-    annotate error "docker build $tag: $(tail -12 "$logfile" | tr '\n' ' ' | cut -c1-240)"
+    tail -40 "$logfile" >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
+    annotate error "docker build $tag: $(tail -45 "$logfile" | tr '\n' ' ' | cut -c1-900)"
     fail "镜像构建失败: $tag"
   fi
   if ! kind load docker-image "$tag" --name "$CLUSTER_NAME" >>"$logfile" 2>&1; then
