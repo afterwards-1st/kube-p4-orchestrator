@@ -918,13 +918,19 @@ class ComputeTaskController:
             self._cached_tasks if resources_refreshed else dynamic_tasks
         )
         for task in tasks_to_reconcile:
-            self.reconcile(
-                task,
-                self._cached_nodes,
-                self._cached_worker_pods,
-                runtime_metrics,
-                metrics_state,
-            )
+            try:
+                self.reconcile(
+                    task,
+                    self._cached_nodes,
+                    self._cached_worker_pods,
+                    runtime_metrics,
+                    metrics_state,
+                )
+            except Exception:
+                logging.exception(
+                    "reconcile failed for task %s",
+                    task.get("metadata", {}).get("name", "<unknown>"),
+                )
         return resources_refreshed
 
     def run(self) -> None:

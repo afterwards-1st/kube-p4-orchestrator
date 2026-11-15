@@ -44,6 +44,24 @@ class ControllerLoopTests(unittest.TestCase):
         controller._log_metrics_state = Mock()
         return controller
 
+    def test_failed_task_does_not_block_following_tasks_and_is_retried(self):
+        controller = self.make_controller()
+        def reconcile(task, *_args):
+            if task["metadata"]["name"] == "static-task":
+                raise RuntimeError("intentional failure")
+
+        controller.reconcile.side_effect = reconcile
+        metrics_state = {"source": "dynamic", "dynamic_backend_count": 1, "error": ""}
+        with patch.object(controller_module, "RESOURCE_REFRESH_SECONDS", 15), patch.object(
+            controller_module, "load_combined_runtime_metrics", return_value=({}, metrics_state)
+        ), self.assertLogs(level="ERROR") as logs:
+            self.assertTrue(controller.run_once(now=0))
+            self.assertTrue(controller.run_once(now=15))
+
+        names = [call.args[0]["metadata"]["name"] for call in controller.reconcile.call_args_list]
+        self.assertEqual(["static-task", "dynamic-task", "static-task", "dynamic-task"], names)
+        self.assertEqual(2, sum("reconcile failed for task static-task" in line for line in logs.output))
+
     def test_fast_cycle_reuses_resource_cache_and_only_reconciles_dynamic_tasks(self):
         controller = self.make_controller()
         metrics = {"backends": {"216": {"queue_depth": 0}}}
