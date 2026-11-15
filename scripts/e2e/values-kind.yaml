@@ -4,10 +4,18 @@ controller:
   image:
     tag: e2e
   workerSlots: "216,217"
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
 metricsReceiver:
   image:
     tag: e2e
   workerSlots: "216,217"
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
 nodeAgent:
   image:
     tag: e2e

@@ -27,6 +27,10 @@ spec:
         {{- include "kube-orchestrator.labels" . | nindent 8 }}
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.metricsReceiver.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: metrics-receiver
           image: {{ include "kube-orchestrator.image" (dict "image" .Values.metricsReceiver.image) }}

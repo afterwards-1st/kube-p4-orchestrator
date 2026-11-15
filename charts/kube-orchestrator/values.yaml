@@ -43,6 +43,7 @@ metricsReceiver:
   udpPort: 9999
   httpPort: 8080
   serviceType: ClusterIP
+  tolerations: []
   auth:
     # true 时由 Chart 创建 metrics-receiver-auth Secret；已有 Secret 时填 existingSecret 跳过
     create: true
