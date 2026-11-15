@@ -1,6 +1,7 @@
 # ---- 构建阶段：完整工具链 + 单元测试 ----
 FROM debian:bookworm-slim AS build
-RUN apt-get update && apt-get install -y --no-install-recommends g++ cmake \
+# make 是 cmake 默认生成器（Unix Makefiles）的依赖，--no-install-recommends 不会自动带上
+RUN apt-get update && apt-get install -y --no-install-recommends g++ cmake make \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY CMakeLists.txt ./
