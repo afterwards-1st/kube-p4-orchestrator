@@ -20,7 +20,7 @@ spec:
         app: ubuntu-194
         slot: "216"
       annotations:
-        k8s.v1.cni.cncf.io/networks: '[{"name":"tor-194","interface":"net1","ips":["10.10.1.216"],"mac":"d2:a0:d7:1d:e9:89"}]'
+        k8s.v1.cni.cncf.io/networks: '[{"name":"tor-194","interface":"net1","ips":["10.10.1.216"],"mac":"02:4e:19:40:02:16"}]'
         orchestrator.wzt.io/metrics-target: metrics-receiver.kube-orchestrator.svc.cluster.local
     spec:
       serviceAccountName: resource-collector
@@ -68,7 +68,7 @@ spec:
             - bash
             - -lc
             - >-
-              ip link set dev net1 address d2:a0:d7:1d:e9:89 &&
+              ip link set dev net1 address 02:4e:19:40:02:16 &&
               exec python3 -u /opt/bsy/batch_server_report_sim.py
               --backend-id 216
               --report-ip "${METRICS_REPORT_HOST}"
