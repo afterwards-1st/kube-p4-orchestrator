@@ -13,7 +13,9 @@ RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
     && ctest --test-dir build --output-on-failure
 
 # ---- 运行阶段：distroless 极小镜像，非 root 运行 ----
-FROM gcr.io/distroless/base-debian12
+# cc 变体自带 libstdc++/libgcc——g++ 编译的动态链接二进制的标准运行时选择；
+# base 变体只有 libc，会报 libstdc++.so.6 cannot open shared object file。
+FROM gcr.io/distroless/cc-debian12
 COPY --from=build /src/build/node_agent /node_agent
 # HEALTHCHECK 用 exec 形式，distroless 无 shell 也可执行；
 # selfcheck 只校验配置与本机采集，不依赖 receiver 可达，避免误杀。
