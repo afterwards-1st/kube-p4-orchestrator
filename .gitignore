@@ -6,6 +6,10 @@ __pycache__/
 .coverage
 htmlcov/
 
+# C++ agent build output
+agent/build/
+agent/**/*.o
+
 # Local environments and editor settings
 .venv/
 venv/

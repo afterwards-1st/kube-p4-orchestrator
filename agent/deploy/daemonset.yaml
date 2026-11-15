@@ -1,0 +1,69 @@
+# C++ 节点指标 agent：以 DaemonSet 形态运行在 Worker 节点上，
+# 采集本机容器资源用量（/proc + cgroup v2）并按 Worker 槽位向 metrics-receiver 上报。
+# 注意：AGENT_BACKEND_IDS 必须是 receiver WORKER_SLOTS 白名单的子集，否则报文会被拒收。
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  namespace: kube-orchestrator
+  labels:
+    app.kubernetes.io/name: node-agent
+    app.kubernetes.io/part-of: kube-orchestrator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-agent
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: node-agent
+        app.kubernetes.io/part-of: kube-orchestrator
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: node-agent
+          image: kube-orchestrator/node-agent:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGENT_BACKEND_IDS
+              # 每个节点设置自己承载的槽位，多个用逗号分隔；须在 WORKER_SLOTS 白名单内。
+              value: "216"
+            - name: AGENT_REPORT_HOST
+              value: "metrics-receiver.kube-orchestrator.svc"
+            - name: AGENT_REPORT_PORT
+              value: "9999"
+            - name: AGENT_REPORT_INTERVAL_MS
+              value: "200"
+            - name: AGENT_STATUS_FILE
+              # 可选：挂载批处理服务写出的状态文件路径后填入，未配置则上报空闲心跳。
+              value: ""
+          livenessProbe:
+            exec:
+              command: ["/node_agent", "--selfcheck"]
+            initialDelaySeconds: 2
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
