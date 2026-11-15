@@ -121,7 +121,8 @@ bash scripts/e2e_kind.sh
 
 ## 文档入口
 
-- docs/PROJECT_FULL_DETAILS.md：完整项目说明书，推荐首先阅读。
+- **handbook/README.md：上手手册（推荐首先阅读）**——学习路线、部署大全、代码跟读指南、CI 排障全记录、面试速查。
+- docs/PROJECT_FULL_DETAILS.md：完整项目说明书。
 - docs/SYSTEM_DESIGN.md：协同调度系统设计详解（每个组件的机制与取舍）。
 - docs/AGENT_DEVELOPMENT_LOG.md：C++ 节点 agent 的开发记录与设计取舍。
 - docs/AGENT_LEARNING_GUIDE.md：C++ 节点 agent 学习指南（逐模块讲解、自测清单与外部学习资源）。
