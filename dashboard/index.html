@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kube-p4-orchestrator · 调度与数据面监控台</title>
+<style>
+:root {
+  --bg: #0b1020;
+  --bg-soft: #0e1428;
+  --panel: #121a31;
+  --panel-edge: #1e2a4a;
+  --line: #223055;
+  --text: #e6ebf5;
+  --text-dim: #8ea0c4;
+  --cyan: #22d3ee;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --violet: #a78bfa;
+  --mono: "Cascadia Code", Consolas, "JetBrains Mono", monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background:
+    radial-gradient(1200px 500px at 80% -10%, rgba(34, 211, 238, .07), transparent 60%),
+    radial-gradient(900px 420px at 5% 110%, rgba(167, 139, 250, .06), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  min-height: 100vh;
+  padding: 18px 22px 30px;
+}
+/* ---------- 顶栏 ---------- */
+header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+  padding: 14px 18px; margin-bottom: 16px;
+  background: linear-gradient(120deg, rgba(34,211,238,.10), rgba(167,139,250,.08) 60%, transparent), var(--panel);
+  border: 1px solid var(--panel-edge); border-radius: 16px;
+}
+.title-block { margin-right: auto; }
+.title-block h1 { font-size: 20px; letter-spacing: .5px; }
+.title-block h1 .accent { color: var(--cyan); }
+.title-block p { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+.mode-group { display: flex; gap: 8px; align-items: center; }
+button {
+  background: #182347; color: var(--text); border: 1px solid var(--line);
+  border-radius: 9px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+  transition: all .15s ease; font-family: inherit;
+}
+button:hover { border-color: var(--cyan); color: var(--cyan); }
+button.primary { background: linear-gradient(135deg, #0e7490, #164e63); border-color: #0e7490; }
+button.primary:hover { filter: brightness(1.2); }
+button.active { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 12px rgba(34,211,238,.25); }
+#tokenInput {
+  width: 170px; background: #0c1226; border: 1px solid var(--line); border-radius: 9px;
+  color: var(--text); padding: 7px 10px; font-size: 12px; font-family: var(--mono);
+}
+#tokenInput:focus { outline: none; border-color: var(--cyan); }
+#connBadge {
+  font-size: 12px; font-family: var(--mono); padding: 6px 12px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--text-dim); white-space: nowrap;
+}
+#connBadge.live { color: var(--green); border-color: rgba(52,211,153,.5); }
+#connBadge.live::before { content: "● "; animation: pulse 1.6s infinite; }
+#connBadge.demo { color: var(--amber); border-color: rgba(251,191,36,.5); }
+#connBadge.err { color: var(--red); border-color: rgba(248,113,113,.5); }
+#clock { font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+/* ---------- KPI ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi {
+  background: linear-gradient(160deg, rgba(34,211,238,.05), transparent 55%), var(--panel);
+  border: 1px solid var(--panel-edge); border-radius: 14px; padding: 13px 16px;
+}
+.kpi .label { font-size: 12px; color: var(--text-dim); }
+.kpi .value { font-size: 26px; font-weight: 700; font-family: var(--mono); margin-top: 4px; }
+.kpi .sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; font-family: var(--mono); }
+.kpi .value.cyan { color: var(--cyan); } .kpi .value.green { color: var(--green); }
+.kpi .value.amber { color: var(--amber); } .kpi .value.red { color: var(--red); }
+/* ---------- 主布局 ---------- */
+.layout { display: grid; grid-template-columns: 1.9fr 1fr; grid-template-areas: "workers scheduler" "p4 scheduler" "p4 log"; gap: 14px; }
+.panel {
+  background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 16px;
+  padding: 16px 18px; min-width: 0;
+}
+.panel h2 { font-size: 14px; color: var(--text); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.panel h2 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.panel h2 .hint { margin-left: auto; font-size: 11px; color: var(--text-dim); font-weight: 400; }
+.p-workers { grid-area: workers; } .p-scheduler { grid-area: scheduler; }
+.p-p4 { grid-area: p4; } .p-log { grid-area: log; }
+/* ---------- Worker 卡片 ---------- */
+#workerGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; }
+.worker {
+  background: linear-gradient(165deg, rgba(255,255,255,.03), transparent 50%), var(--bg-soft);
+  border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px;
+  position: relative; transition: border-color .2s, box-shadow .2s;
+}
+.worker.selected { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan), 0 0 18px rgba(34,211,238,.18); }
+.worker.flash { animation: flash .45s ease; }
+@keyframes flash { 0% { box-shadow: 0 0 0 2px var(--green), 0 0 24px rgba(52,211,153,.5); } 100% { box-shadow: none; } }
+.worker .head { display: flex; align-items: center; gap: 8px; }
+.worker .id { font-family: var(--mono); font-size: 15px; font-weight: 700; }
+.worker .badge { font-size: 10px; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+.badge.fresh { color: var(--green); border-color: rgba(52,211,153,.45); }
+.badge.stale { color: var(--red); border-color: rgba(248,113,113,.5); }
+.badge.plan { color: var(--cyan); border-color: rgba(34,211,238,.5); margin-left: auto; }
+.worker .queue { display: flex; align-items: baseline; gap: 6px; margin-top: 8px; }
+.worker .queue .num { font-size: 24px; font-weight: 700; font-family: var(--mono); }
+.worker .queue .unit { font-size: 11px; color: var(--text-dim); }
+.worker canvas { width: 100%; height: 34px; margin-top: 6px; display: block; }
+.worker .rows { margin-top: 8px; font-size: 11.5px; color: var(--text-dim); display: grid; gap: 3px; font-family: var(--mono); }
+.worker .rows b { color: var(--text); font-weight: 600; }
+.membar { height: 5px; background: #0c1226; border-radius: 4px; overflow: hidden; margin-top: 3px; }
+.membar i { display: block; height: 100%; background: linear-gradient(90deg, var(--violet), var(--cyan)); border-radius: 4px; }
+/* ---------- 调度器 ---------- */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.field label { font-size: 11px; color: var(--text-dim); display: block; margin-bottom: 3px; }
+.field input {
+  width: 100%; background: #0c1226; border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); padding: 6px 9px; font-size: 13px; font-family: var(--mono);
+}
+.field input:focus { outline: none; border-color: var(--cyan); }
+.divider { border: none; border-top: 1px dashed var(--line); margin: 12px 0; }
+#planBtn { width: 100%; margin-top: 12px; padding: 10px; font-size: 14px; }
+#clearPlanBtn { width: 100%; margin-top: 8px; display: none; }
+.plan-summary { display: none; margin-top: 12px; }
+.plan-summary.show { display: block; }
+.big-metric { display: flex; gap: 10px; margin-bottom: 10px; }
+.big-metric .bm { flex: 1; background: #0c1226; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; }
+.big-metric .bm .v { font-size: 20px; font-weight: 700; font-family: var(--mono); color: var(--cyan); }
+.big-metric .bm .k { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
+.alloc-row { display: grid; grid-template-columns: 52px 1fr 74px; gap: 8px; align-items: center; margin-top: 7px; font-size: 12px; }
+.alloc-row .wid { font-family: var(--mono); color: var(--text); }
+.alloc-row .bar { height: 14px; background: #0c1226; border-radius: 7px; overflow: hidden; }
+.alloc-row .bar i { display: block; height: 100%; border-radius: 7px; }
+.alloc-row .est { text-align: right; font-family: var(--mono); color: var(--text-dim); font-size: 11px; }
+#planNote { font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.6; }
+/* ---------- P4 ---------- */
+#p4canvas { width: 100%; height: 300px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-size: 11px; color: var(--text-dim); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); }
+.legend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+/* ---------- 日志 ---------- */
+#logList { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
+.log-item { font-size: 11.5px; font-family: var(--mono); color: var(--text-dim); padding: 6px 9px; background: #0c1226; border-radius: 8px; border-left: 2px solid var(--line); line-height: 1.5; }
+.log-item.good { border-left-color: var(--green); }
+.log-item.warn { border-left-color: var(--amber); }
+.log-item.bad { border-left-color: var(--red); }
+.log-item.info { border-left-color: var(--cyan); }
+.log-item .t { color: #5c6f96; margin-right: 6px; }
+footer { margin-top: 16px; font-size: 11.5px; color: var(--text-dim); text-align: center; line-height: 1.8; }
+footer code { font-family: var(--mono); color: #5c6f96; }
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: 1fr; grid-template-areas: "workers" "scheduler" "p4" "log"; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>kube-p4-orchestrator <span class="accent">调度与数据面监控台</span></h1>
+    <p>ComputeTask CRD → 完成时间调度 → P4/BMv2 数据面转发 · 数据源 <code style="font-family:var(--mono)">/v1/backends</code></p>
+  </div>
+  <div class="mode-group">
+    <button id="liveBtn">实时模式</button>
+    <button id="demoBtn" class="active">演示模式</button>
+    <input id="tokenInput" type="password" placeholder="Metrics Token（可选）">
+    <span id="connBadge" class="demo">DEMO</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<section class="kpis">
+  <div class="kpi"><div class="label">接收上报</div><div class="value cyan" id="kpiAccepted">—</div><div class="sub" id="kpiRejected">拒绝 0</div></div>
+  <div class="kpi"><div class="label">在线 Worker</div><div class="value green" id="kpiFresh">—</div><div class="sub" id="kpiTotal">共 — 个槽位</div></div>
+  <div class="kpi"><div class="label">累计完成任务</div><div class="value amber" id="kpiDone">—</div><div class="sub" id="kpiBatches">批次 —</div></div>
+  <div class="kpi"><div class="label">当前总排队</div><div class="value" id="kpiQueue">—</div><div class="sub">全部 Worker 之和</div></div>
+  <div class="kpi"><div class="label">数据面已转发</div><div class="value cyan" id="kpiForwarded">0</div><div class="sub">P4 udp_tag_table 命中</div></div>
+</section>
+
+<div class="layout">
+
+  <section class="panel p-workers">
+    <h2><span class="dot"></span>Worker 实时指标<span class="hint" id="workersHint">队列深度 / 资源用量</span></h2>
+    <div id="workerGrid"></div>
+  </section>
+
+  <section class="panel p-scheduler">
+    <h2><span class="dot" style="background:var(--violet);box-shadow:0 0 8px var(--violet)"></span>调度模拟器<span class="hint">最短预计完成时间</span></h2>
+    <div class="form-grid">
+      <div class="field"><label>任务数</label><input id="taskCount" type="number" value="24" min="1" max="9999"></div>
+      <div class="field"><label>最多参与节点</label><input id="maxDevices" type="number" value="6" min="1" max="9"></div>
+      <div class="field"><label>需求 · CPU 核</label><input id="reqCpu" type="number" value="4" min="0"></div>
+      <div class="field"><label>需求 · 内存 GB</label><input id="reqMem" type="number" value="8" min="0"></div>
+      <div class="field"><label>需求 · GPU 卡</label><input id="reqGpu" type="number" value="0" min="0"></div>
+      <div class="field"><label>单节点 · CPU 核</label><input id="capCpu" type="number" value="8" min="1"></div>
+      <div class="field"><label>单节点 · 内存 GB</label><input id="capMem" type="number" value="32" min="1"></div>
+      <div class="field"><label>单节点 · GPU 卡</label><input id="capGpu" type="number" value="0" min="0"></div>
+    </div>
+    <button id="planBtn" class="primary">生成调度方案</button>
+    <button id="clearPlanBtn">清除方案</button>
+    <div class="plan-summary" id="planSummary">
+      <div class="big-metric">
+        <div class="bm"><div class="v" id="planMakespan">—</div><div class="k">预计 makespan</div></div>
+        <div class="bm"><div class="v" id="planEvaluated">—</div><div class="k">枚举可行子集</div></div>
+        <div class="bm"><div class="v" id="planTotal">—</div><div class="k">预计总耗时</div></div>
+      </div>
+      <div id="planAlloc"></div>
+    </div>
+    <p id="planNote">算法与 <b>app/policies/completion_time_scheduler.py</b> 同口径：可行子集全枚举 + 最大余数分配 + 批次等待修正。指标假设：服务速率 100 任务/秒（按分配 CPU 比例折减）、网络时延 5ms、批大小 16、批超时 50ms、排队深度取实时值。选中方案后，P4 数据面动画只向选中节点转发。</p>
+  </section>
+
+  <section class="panel p-p4">
+    <h2><span class="dot" style="background:var(--green);box-shadow:0 0 8px var(--green)"></span>P4 数据面转发视图<span class="hint">调度结果 → 实际路由</span></h2>
+    <canvas id="p4canvas"></canvas>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section class="panel p-log">
+    <h2><span class="dot" style="background:var(--amber);box-shadow:0 0 8px var(--amber)"></span>事件日志</h2>
+    <div id="logList"></div>
+  </section>
+
+</div>
+
+<footer>
+  kube-p4-orchestrator · 实时模式数据来自 metrics-receiver（<code>/v1/backends</code>，Token 经 X-Metrics-Token 头传递，仅保存在浏览器本地）；<br>
+  演示模式为本地仿真，用于无集群环境展示。调度算法口径与仓库 Python 实现一致，仅供可视化。
+</footer>
+
+<script>
+"use strict";
+/* ================= 工具 ================= */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round3 = (v) => Math.round(v * 1000) / 1000;
+const PALETTE = ["#22d3ee", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#f87171", "#60a5fa"];
+const colorOf = (id, idx) => PALETTE[idx % PALETTE.length];
+const nowStr = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
+
+/* ================= 全局状态 ================= */
+const state = {
+  mode: "demo",               // live | demo
+  token: localStorage.getItem("kp4_token") || "",
+  backends: new Map(),        // id -> {id, queueDepth, completed, batches, cpu, memBytes, memLimit, fresh, color, history[]}
+  accepted: 0, rejected: 0, staleAfter: 3.0,
+  plan: null,                 // {alloc:{id:count}, estimates:{id:ms}, makespan, total, evaluated, selectedIds:[]}
+  forwarded: 0,
+  everLive: false,
+};
+
+/* ================= 事件日志 ================= */
+const logs = [];
+function log(text, cls = "info") {
+  logs.unshift({ t: nowStr(), text, cls });
+  if (logs.length > 30) logs.pop();
+  $("logList").innerHTML = logs.map((l) =>
+    `<div class="log-item ${l.cls}"><span class="t">${l.t}</span>${l.text}</div>`).join("");
+}
+
+/* ================= Worker 渲染 ================= */
+function ensureWorker(id, idx) {
+  if (state.backends.has(id)) return state.backends.get(id);
+  const w = {
+    id, idx, queueDepth: 0, completed: 0, batches: 0, cpu: 0, memBytes: 0, memLimit: 0,
+    fresh: false, history: [], flashUntil: 0, wasFresh: false,
+  };
+  state.backends.set(id, w);
+  const card = document.createElement("div");
+  card.className = "worker"; card.id = "worker-" + id;
+  card.innerHTML = `
+    <div class="head"><span class="id" style="color:${colorOf(id, idx)}">Worker ${id}</span>
+      <span class="badge fresh" data-role="badge">OFFLINE</span>
+      <span class="badge plan" data-role="planBadge" style="display:none">方案选中</span></div>
+    <div class="queue"><span class="num" data-role="queue">0</span><span class="unit">排队任务</span></div>
+    <canvas data-role="spark" width="380" height="68"></canvas>
+    <div class="rows">
+      <div>已完成 <b data-role="done">0</b> · 批次 <b data-role="batches">0</b></div>
+      <div>CPU <b data-role="cpu">—</b> · 来源 <b data-role="rsrc">—</b></div>
+      <div>内存 <b data-role="mem">—</b>
+        <div class="membar"><i data-role="membar" style="width:0%"></i></div>
+      </div>
+    </div>`;
+  $("workerGrid").appendChild(card);
+  return w;
+}
+
+function fmtBytes(b) {
+  if (!b) return "—";
+  if (b >= 1 << 30) return (b / (1 << 30)).toFixed(2) + " GiB";
+  if (b >= 1 << 20) return (b / (1 << 20)).toFixed(1) + " MiB";
+  return (b / 1024).toFixed(0) + " KiB";
+}
+
+function renderWorkers() {
+  const sorted = [...state.backends.values()].sort((a, b) => a.idx - b.idx);
+  let freshCount = 0, totalDone = 0, totalBatches = 0, totalQueue = 0;
+  for (const w of sorted) {
+    const card = $("worker-" + w.id);
+    if (!card) continue;
+    if (w.fresh) freshCount++;
+    totalDone += w.completed; totalBatches += w.batches; totalQueue += w.queueDepth;
+    const badge = card.querySelector('[data-role="badge"]');
+    badge.textContent = w.fresh ? "FRESH" : "STALE";
+    badge.className = "badge " + (w.fresh ? "fresh" : "stale");
+    card.querySelector('[data-role="queue"]').textContent = w.queueDepth;
+    card.querySelector('[data-role="done"]').textContent = w.completed;
+    card.querySelector('[data-role="batches"]').textContent = w.batches;
+    card.querySelector('[data-role="cpu"]').textContent = w.fresh ? w.cpu.toFixed(1) + "%" : "—";
+    const rsrc = card.querySelector('[data-role="rsrc"]');
+    rsrc.textContent = w.resourceSource || "—";
+    card.querySelector('[data-role="mem"]').textContent = fmtBytes(w.memBytes) +
+      (w.memLimit ? " / " + fmtBytes(w.memLimit) : "");
+    card.querySelector('[data-role="membar"]').style.width =
+      w.memLimit ? clamp((w.memBytes / w.memLimit) * 100, 0, 100) + "%" :
+        clamp(Math.sqrt(w.memBytes / (1 << 30)) * 12, 0, 100) + "%";
+    card.querySelector('[data-role="planBadge"]').style.display =
+      state.plan && state.plan.selectedIds.includes(w.id) && w.fresh ? "" : "none";
+    card.classList.toggle("selected", !!(state.plan && state.plan.selectedIds.includes(w.id) && w.fresh));
+    if (w.flashUntil > performance.now()) card.classList.add("flash");
+    else card.classList.remove("flash");
+    // 状态翻转记日志
+    if (w.wasFresh && !w.fresh) log(`Worker ${w.id} 指标过期或失联（STALE）`, "bad");
+    if (!w.wasFresh && w.fresh && w.completed > 0) log(`Worker ${w.id} 恢复上报`, "good");
+    w.wasFresh = w.fresh;
+    drawSpark(w, card);
+  }
+  $("kpiFresh").textContent = freshCount + " / " + sorted.length;
+  $("kpiTotal").textContent = `共 ${sorted.length} 个槽位`;
+  $("kpiDone").textContent = totalDone;
+  $("kpiBatches").textContent = `批次 ${totalBatches}`;
+  $("kpiQueue").textContent = totalQueue;
+  const rej = $("kpiRejected");
+  rej.textContent = "拒绝 " + state.rejected;
+  rej.style.color = state.rejected > 0 ? "var(--red)" : "";
+  renderLegend(sorted);
+}
+
+function drawSpark(w, card) {
+  const canvas = card.querySelector('[data-role="spark"]');
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const hist = w.history;
+  if (hist.length < 2) return;
+  const max = Math.max(10, ...hist) * 1.15;
+  const color = colorOf(w.id, w.idx);
+  ctx.beginPath();
+  hist.forEach((v, i) => {
+    const x = (i / (hist.length - 1)) * W;
+    const y = H - (v / max) * (H - 6) - 3;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, color + "55"); grad.addColorStop(1, color + "00");
+  ctx.fillStyle = grad; ctx.fill();
+}
+
+function renderLegend(sorted) {
+  $("legend").innerHTML = sorted.map((w) =>
+    `<span><i style="background:${colorOf(w.id, w.idx)}"></i>${w.id}</span>`).join("");
+}
+
+/* ================= 快照接入（实时 / 演示共用） ================= */
+function ingestSnapshot(snap) {
+  state.accepted = snap.accepted_reports ?? state.accepted;
+  state.rejected = snap.rejected_reports ?? state.rejected;
+  state.staleAfter = snap.stale_after_seconds ?? state.staleAfter;
+  $("kpiAccepted").textContent = state.accepted;
+  const ids = new Set();
+  for (const item of snap.backends) {
+    const id = item.backend_id;
+    ids.add(id);
+    const idx = state.backends.size;
+    const w = ensureWorker(id, [...state.backends.values()].find((x) => x.id === id)?.idx ?? idx);
+    w.queueDepth = item.queue_depth || 0;
+    w.completed = item.completed_tasks || 0;
+    w.batches = item.total_batches || 0;
+    w.cpu = item.container_cpu_percent || 0;
+    w.memBytes = item.container_mem_usage_bytes || 0;
+    w.memLimit = item.container_mem_limit_bytes || 0;
+    w.resourceSource = item.resource_source || (item.fresh ? "workload" : "");
+    w.fresh = !!item.fresh;
+    w.history.push(w.queueDepth);
+    if (w.history.length > 64) w.history.shift();
+  }
+  renderWorkers();
+}
+
+/* ================= 实时模式 ================= */
+async function pollLive() {
+  if (state.mode !== "live") return;
+  const headers = {};
+  if (state.token) headers["X-Metrics-Token"] = state.token;
+  let resp, snap;
+  try {
+    resp = await fetch("/v1/backends", { headers, cache: "no-store" });
+    if (resp.status === 403) throw new Error("token");
+    if (!resp.ok) throw new Error("http " + resp.status);
+    snap = await resp.json();
+  } catch (err) {
+    setConn(err.message === "token" ? "err" : "err",
+      err.message === "token" ? "TOKEN 无效" : "RECEIVER 失联");
+    log("实时数据拉取失败：" + err.message + "，可切换演示模式", "warn");
+    return;
+  }
+  setConn("live", "LIVE · receiver 已连接");
+  if (!state.everLive) { log("已连接 metrics-receiver，进入实时模式", "good"); state.everLive = true; }
+  ingestSnapshot(snap);
+}
+
+/* ================= 演示模式仿真 ================= */
+const DEMO_IDS = [216, 217, 218, 226, 227, 228];
+const demoState = { timer: null, tick: 0, offlineUntil: new Map(), nextOfflineAt: 30 };
+
+function demoTick() {
+  demoState.tick++;
+  const now = performance.now() / 1000;
+  // 周期性让某个 Worker 掉线几秒，演示 STALE/恢复
+  if (demoState.tick >= demoState.nextOfflineAt) {
+    const victim = DEMO_IDS[Math.floor(Math.random() * DEMO_IDS.length)];
+    demoState.offlineUntil.set(victim, now + 4 + Math.random() * 5);
+    demoState.nextOfflineAt = demoState.tick + 50 + Math.floor(Math.random() * 40);
+    log(`[演示] Worker ${victim} 模拟离线数秒`, "warn");
+  }
+  const backends = DEMO_IDS.map((id, idx) => {
+    ensureWorker(id, idx);
+    const w = state.backends.get(id);
+    const offline = now < (demoState.offlineUntil.get(id) || 0);
+    if (offline) {
+      Object.assign(w, { queueDepth: 0, fresh: false, cpu: 0, resourceSource: "" });
+    } else {
+      w.queueDepth = clamp(w.queueDepth + Math.round(Math.random() * 7 - 3), 0, 48);
+      if (Math.random() < 0.18 && w.queueDepth > 0) {          // 批次冲刷
+        const batch = Math.min(w.queueDepth, 8 + Math.floor(Math.random() * 9));
+        w.queueDepth -= batch; w.completed += batch; w.batches++;
+      }
+      w.cpu = clamp(3 + w.queueDepth * 0.9 + Math.random() * 6, 1, 96);
+      w.memBytes = (64 + w.queueDepth * 1.3 + Math.random() * 8) * (1 << 20);
+      w.memLimit = (idx % 2 === 0) ? 512 * (1 << 20) : 0;       // 一半节点演示限额
+      w.resourceSource = "cgroup-v2";
+      w.fresh = true;
+    }
+    return {
+      backend_id: id, queue_depth: w.queueDepth, fresh: w.fresh,
+      completed_tasks: w.completed, total_batches: w.batches,
+      container_cpu_percent: w.cpu, container_mem_usage_bytes: w.memBytes,
+      container_mem_limit_bytes: w.memLimit, resource_source: w.resourceSource,
+    };
+  });
+  state.accepted += backends.filter((b) => b.fresh).length;
+  ingestSnapshot({ accepted_reports: state.accepted, rejected_reports: 0, backends });
+}
+
+function resetWorkers() {
+  state.backends.clear();
+  $("workerGrid").innerHTML = "";
+  state.plan = null;
+  $("planSummary").classList.remove("show");
+  $("clearPlanBtn").style.display = "none";
+}
+
+function enterDemo() {
+  stopModes();
+  resetWorkers();
+  state.mode = "demo";
+  $("demoBtn").classList.add("active"); $("liveBtn").classList.remove("active");
+  setConn("demo", "DEMO · 本地仿真");
+  demoState.timer = setInterval(demoTick, 500);
+  log("进入演示模式：本地仿真 6 个 Worker 槽位", "info");
+}
+
+function enterLive() {
+  stopModes();
+  resetWorkers();
+  state.mode = "live";
+  $("liveBtn").classList.add("active"); $("demoBtn").classList.remove("active");
+  setConn("", "LIVE · 连接中…");
+  log("尝试连接 metrics-receiver…", "info");
+  pollLive();
+}
+
+function stopModes() {
+  if (demoState.timer) { clearInterval(demoState.timer); demoState.timer = null; }
+}
+
+function setConn(cls, text) {
+  const el = $("connBadge");
+  el.className = cls; el.textContent = text;
+}
+
+/* ================= 调度算法（与 completion_time_scheduler.py 同口径） ================= */
+function covers(capacity, requirement) {
+  return Object.entries(requirement).every(([k, v]) => (capacity[k] || 0) + 1e-9 >= v);
+}
+function subsetCapacity(subset, keys) {
+  const cap = {};
+  for (const k of keys) cap[k] = subset.reduce((s, d) => s + Math.max(0, d.allocatable[k] || 0), 0);
+  return cap;
+}
+function resourceAllocations(selected, requirement) {
+  const alloc = {}; selected.forEach((d) => (alloc[d.id] = {}));
+  const primary = ["cpu.core", "gpu.count", "memory.gb"].find((k) => (requirement[k] || 0) > 0) || null;
+  if (primary) {
+    let remaining = requirement[primary];
+    for (const d of selected) {
+      const value = Math.min(Math.max(0, d.allocatable[primary] || 0), remaining);
+      alloc[d.id][primary] = value; remaining -= value;
+    }
+  }
+  const primaryTotal = primary
+    ? selected.reduce((s, d) => s + (alloc[d.id][primary] || 0), 0) : 0;
+  for (const [key, need] of Object.entries(requirement)) {
+    if (key === primary) continue;
+    let remaining = need;
+    for (const d of selected) {
+      const weight = primary && primaryTotal ? (alloc[d.id][primary] || 0) / primaryTotal : 1 / selected.length;
+      const value = Math.min(Math.max(0, d.allocatable[key] || 0), need * weight);
+      alloc[d.id][key] = value; remaining -= value;
+    }
+    for (const d of selected) {
+      if (remaining <= 1e-9) break;
+      const headroom = Math.max(0, (d.allocatable[key] || 0) - (alloc[d.id][key] || 0));
+      const extra = Math.min(headroom, remaining);
+      alloc[d.id][key] = (alloc[d.id][key] || 0) + extra; remaining -= extra;
+    }
+  }
+  return alloc;
+}
+function largestRemainder(total, weights) {
+  const denom = weights.reduce((a, b) => a + b, 0);
+  const exact = weights.map((w) => (total * w) / denom);
+  const counts = exact.map(Math.floor);
+  const deficit = total - counts.reduce((a, b) => a + b, 0);
+  exact.map((v, i) => ({ frac: v - Math.floor(v), i }))
+    .sort((a, b) => (b.frac - a.frac) || (b.i - a.i))
+    .slice(0, deficit).forEach(({ i }) => counts[i]++);
+  return counts;
+}
+function metricsFor(w) {
+  return {
+    service_rate: 100.0, queue_depth: w.queueDepth || 0,
+    network_latency_ms: 5.0, batch_size: 16, batch_timeout_ms: 50.0,
+  };
+}
+function evaluate(selected, requirement, taskCount) {
+  const allocations = resourceAllocations(selected, requirement);
+  const rates = [], items = [];
+  for (const d of selected) {
+    const item = metricsFor(d);
+    const totalCpu = Math.max(d.totalResources["cpu.core"] || 0, 1e-9);
+    const assignedCpu = allocations[d.id]["cpu.core"] ?? totalCpu;
+    const rate = item.service_rate * Math.min(1.0, assignedCpu / totalCpu);
+    rates.push(Math.max(rate, 1e-9)); items.push(item);
+  }
+  const counts = largestRemainder(taskCount, rates);
+  const taskAllocations = {}, estimates = {};
+  selected.forEach((d, i) => {
+    const item = items[i], rate = rates[i], count = counts[i];
+    const queueMs = (item.queue_depth / item.service_rate) * 1000.0;
+    const computeMs = (count / rate) * 1000.0;
+    const batchWaitMs = count && count % item.batch_size !== 0 ? item.batch_timeout_ms : 0.0;
+    taskAllocations[d.id] = count;
+    estimates[d.id] = round3(queueMs + item.network_latency_ms + computeMs + batchWaitMs);
+  });
+  const estList = Object.values(estimates);
+  return {
+    taskAllocations, estimates,
+    makespan: round3(Math.max(...estList)), total: round3(estList.reduce((a, b) => a + b, 0)),
+  };
+}
+function* combinations(arr, size, start = 0, acc = []) {
+  if (acc.length === size) { yield acc; return; }
+  for (let i = start; i <= arr.length - (size - acc.length); i++) yield* combinations(arr, size, i + 1, [...acc, arr[i]]);
+}
+function cmpScore(a, b) {
+  // 与 Python 的元组比较同序：先 makespan，再总耗时，再节点数，最后按 id 数组逐元素比较。
+  for (let i = 0; i < 3; i++) {
+    if (a.nums[i] < b.nums[i]) return -1;
+    if (a.nums[i] > b.nums[i]) return 1;
+  }
+  const len = Math.min(a.ids.length, b.ids.length);
+  for (let i = 0; i < len; i++) {
+    if (a.ids[i] < b.ids[i]) return -1;
+    if (a.ids[i] > b.ids[i]) return 1;
+  }
+  return a.ids.length - b.ids.length;
+}
+function chooseByCompletionTime(candidates, requirement, taskCount, maxDevices) {
+  if (taskCount <= 0 || candidates.length === 0) return null;
+  const upper = Math.min(maxDevices || candidates.length, candidates.length);
+  const keys = Object.keys(requirement);
+  let best = null, evaluated = 0;
+  for (let size = 1; size <= upper; size++) {
+    for (const subset of combinations(candidates, size)) {
+      if (!covers(subsetCapacity(subset, keys), requirement)) continue;
+      evaluated++;
+      const plan = evaluate(subset, requirement, taskCount);
+      const candidate = {
+        nums: [plan.makespan, plan.total, subset.length],
+        ids: subset.map((d) => d.id), plan,
+      };
+      if (!best || cmpScore(candidate, best) < 0) best = candidate;
+    }
+  }
+  return best ? { ...best.plan, selectedIds: best.ids, evaluated } : null;
+}
+
+function generatePlan() {
+  const fresh = [...state.backends.values()].filter((w) => w.fresh);
+  if (!fresh.length) { log("没有在线 Worker，无法生成方案", "bad"); return; }
+  const taskCount = parseInt($("taskCount").value, 10);
+  const maxDevices = parseInt($("maxDevices").value, 10);
+  const requirement = {
+    "cpu.core": parseInt($("reqCpu").value, 10) || 0,
+    "memory.gb": parseInt($("reqMem").value, 10) || 0,
+    "gpu.count": parseInt($("reqGpu").value, 10) || 0,
+  };
+  const caps = {
+    "cpu.core": parseInt($("capCpu").value, 10) || 8,
+    "memory.gb": parseInt($("capMem").value, 10) || 32,
+    "gpu.count": parseInt($("capGpu").value, 10) || 0,
+  };
+  const candidates = fresh.map((w) => ({
+    id: w.id, queueDepth: w.queueDepth,
+    allocatable: { ...caps }, totalResources: { ...caps },
+  }));
+  const plan = chooseByCompletionTime(candidates, requirement, taskCount, maxDevices);
+  if (!plan) { log("需求超出全部 Worker 容量，无可行方案", "bad"); return; }
+  state.plan = plan;
+  renderPlan(plan);
+  const allocText = plan.selectedIds.map((id) => `${id}(${plan.taskAllocations[id]})`).join(" ");
+  log(`生成方案：${allocText} · makespan ${plan.makespan}ms · 枚举 ${plan.evaluated} 个子集`, "info");
+}
+
+function renderPlan(plan) {
+  $("clearPlanBtn").style.display = "";
+  const summary = $("planSummary");
+  summary.classList.add("show");
+  $("planMakespan").textContent = plan.makespan + " ms";
+  $("planEvaluated").textContent = plan.evaluated;
+  $("planTotal").textContent = plan.total + " ms";
+  const maxAlloc = Math.max(1, ...Object.values(plan.taskAllocations));
+  const rows = plan.selectedIds.map((id) => {
+    const count = plan.taskAllocations[id];
+    const color = colorOf(id, state.backends.get(id)?.idx ?? 0);
+    return `<div class="alloc-row">
+      <span class="wid" style="color:${color}">Worker ${id}</span>
+      <div class="bar"><i style="width:${(count / maxAlloc) * 100}%;background:${color}"></i></div>
+      <span class="est">${count} 任务 · ${plan.estimates[id]} ms</span></div>`;
+  }).join("");
+  $("planAlloc").innerHTML = rows;
+  renderWorkers();
+}
+
+function clearPlan() {
+  state.plan = null;
+  $("planSummary").classList.remove("show");
+  $("clearPlanBtn").style.display = "none";
+  renderWorkers();
+  log("已清除调度方案", "info");
+}
+
+/* ================= P4 数据面动画 ================= */
+const p4 = { dots: [], spawnAcc: 0, lastT: 0, arrivedByWorker: new Map() };
+function p4Loop(tMs) {
+  requestAnimationFrame(p4Loop);
+  const canvas = $("p4canvas");
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if (canvas.width !== W * dpr) { canvas.width = W * dpr; canvas.height = H * dpr; }
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const dt = p4.lastT ? Math.min(0.1, (tMs - p4.lastT) / 1000) : 0;
+  p4.lastT = tMs;
+
+  const workers = [...state.backends.values()].filter((w) => w.fresh);
+  const targets = state.plan
+    ? workers.filter((w) => state.plan.selectedIds.includes(w.id))
+    : workers;
+  const src = { x: 70, y: H / 2 };
+  const sw = { x: W * 0.42, y: H / 2 };
+  const podX = W - 86;
+  const podYs = targets.length
+    ? targets.map((_, i) => (H / (targets.length + 1)) * (i + 1)) : [];
+
+  drawP4Stage(ctx, W, H, src, sw, targets, podX, podYs);
+
+  // 生成流量：速率与总排队深度挂钩
+  const totalQueue = [...state.backends.values()].reduce((s, w) => s + (w.fresh ? w.queueDepth : 0), 0);
+  const rate = workers.length ? 1.5 + Math.min(12, totalQueue / 6) : 0;
+  p4.spawnAcc += dt * rate;
+  while (p4.spawnAcc >= 1 && targets.length && p4.dots.length < 140) {
+    p4.spawnAcc -= 1;
+    const idx = Math.floor(Math.random() * targets.length);
+    const w = targets[idx];
+    p4.dots.push({
+      t: 0, speed: 0.55 + Math.random() * 0.25, backendId: w.id,
+      color: colorOf(w.id, w.idx),
+      alloc: state.plan ? (state.plan.taskAllocations[w.id] || 1) : 1,
+    });
+  }
+
+  // 更新与绘制
+  p4.dots = p4.dots.filter((dot) => {
+    dot.t += dt * dot.speed;
+    if (dot.t >= 1) {
+      state.forwarded++;
+      p4.arrivedByWorker.set(dot.backendId, (p4.arrivedByWorker.get(dot.backendId) || 0) + 1);
+      const w = state.backends.get(dot.backendId);
+      if (w) {
+        w.flashUntil = performance.now() + 380;
+        const card = $("worker-" + dot.backendId);
+        if (card) { card.classList.add("flash"); setTimeout(() => card.classList.remove("flash"), 450); }
+      }
+      return false;
+    }
+    const ti = targets.findIndex((x) => x.id === dot.backendId);
+    const p1 = { x: src.x + 26, y: src.y };
+    const p2 = { x: sw.x - 30, y: sw.y };
+    const p3 = { x: sw.x + 30, y: sw.y };
+    const p4p = { x: podX - 18, y: podYs[ti] ?? sw.y };
+    const segs = [
+      lerp(p1, p2, seg(dot.t, 0, 0.4)),
+      lerp(p2, p3, seg(dot.t, 0.4, 0.55)),
+      lerp(p3, p4p, seg(dot.t, 0.55, 1)),
+    ];
+    const pos = dot.t < 0.4 ? segs[0] : dot.t < 0.55 ? segs[1] : segs[2];
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 3.2 + dot.alloc * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = dot.color;
+    ctx.shadowColor = dot.color; ctx.shadowBlur = 7;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    return true;
+  });
+  $("kpiForwarded").textContent = state.forwarded;
+}
+const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+
+function drawP4Stage(ctx, W, H, src, sw, targets, podX, podYs) {
+  ctx.font = "11px " + getComputedStyle(document.body).fontFamily;
+  // 链路
+  ctx.strokeStyle = "rgba(94,120,180,.35)"; ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 5]);
+  for (let i = 0; i < targets.length; i++) {
+    ctx.beginPath();
+    ctx.moveTo(sw.x + 30, sw.y);
+    ctx.quadraticCurveTo((sw.x + podX) / 2, sw.y, podX - 18, podYs[i]);
+    ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(src.x + 26, src.y); ctx.lineTo(sw.x - 30, sw.y); ctx.stroke();
+  ctx.setLineDash([]);
+  // 源
+  roundRect(ctx, src.x - 52, src.y - 22, 78, 44, 9);
+  ctx.fillStyle = "rgba(34,211,238,.09)"; ctx.fill();
+  ctx.strokeStyle = "rgba(34,211,238,.55)"; ctx.stroke();
+  ctx.fillStyle = "#9adbe8"; ctx.textAlign = "center";
+  ctx.fillText("ComputeTask", src.x - 13, src.y - 2);
+  ctx.fillText("任务流", src.x - 13, src.y + 12);
+  // 交换机
+  roundRect(ctx, sw.x - 30, sw.y - 30, 60, 60, 11);
+  ctx.fillStyle = "rgba(52,211,153,.10)"; ctx.fill();
+  ctx.strokeStyle = "rgba(52,211,153,.65)"; ctx.stroke();
+  ctx.fillStyle = "#a9e8cf";
+  ctx.fillText("P4 / BMv2", sw.x, sw.y - 4);
+  ctx.fillText("udp_tag_table", sw.x, sw.y + 12);
+  // Pod
+  targets.forEach((w, i) => {
+    const arrived = p4.arrivedByWorker.get(w.id) || 0;
+    ctx.beginPath();
+    ctx.arc(podX, podYs[i], 15, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(18,26,49,1)"; ctx.fill();
+    ctx.strokeStyle = colorOf(w.id, w.idx); ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = colorOf(w.id, w.idx);
+    ctx.fillText(String(w.id), podX, podYs[i] + 4);
+    ctx.fillStyle = "#5c6f96";
+    ctx.fillText(arrived + " 报文", podX, podYs[i] + 30);
+  });
+  if (!targets.length) {
+    ctx.fillStyle = "#5c6f96";
+    ctx.fillText("等待在线 Worker 指标…", W / 2, H / 2);
+  }
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* ================= 启动 ================= */
+$("tokenInput").value = state.token;
+$("tokenInput").addEventListener("change", (e) => {
+  state.token = e.target.value.trim();
+  localStorage.setItem("kp4_token", state.token);
+  log(state.token ? "已保存 Metrics Token" : "已清除 Metrics Token", "info");
+});
+$("liveBtn").addEventListener("click", enterLive);
+$("demoBtn").addEventListener("click", () => { log("切换到演示模式", "info"); enterDemo(); });
+$("planBtn").addEventListener("click", generatePlan);
+$("clearPlanBtn").addEventListener("click", clearPlan);
+setInterval(() => { $("clock").textContent = nowStr(); }, 1000);
+if (state.mode === "demo") enterDemo();
+requestAnimationFrame(p4Loop);
+setInterval(() => { if (state.mode === "live") pollLive(); }, 2000);
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Callable, Dict, Iterable, Optional
 from urllib.parse import urlparse
@@ -20,6 +21,14 @@ REPORT_FIELDS = (
     "last_avg_wait_ms",
     "last_batch_efficiency",
 )
+
+# C++ 节点 agent 额外上报的容器资源字段；白名单透传，未上报的 backend 不含这些键。
+CONTAINER_RESOURCE_FIELDS = (
+    "container_cpu_percent",
+    "container_mem_usage_bytes",
+    "container_mem_limit_bytes",
+)
+CONTAINER_TEXT_FIELDS = ("cgroup_version", "resource_source", "agent_source")
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -107,6 +116,17 @@ class WorkerMetricStore:
                 self._rejected_reports += 1
             return False
 
+        for key in CONTAINER_RESOURCE_FIELDS:
+            if key not in message:
+                continue
+            try:
+                state[key] = max(0.0, float(message[key]))
+            except (TypeError, ValueError):
+                continue
+        for key in CONTAINER_TEXT_FIELDS:
+            if key in message:
+                state[key] = str(message[key])
+
         with self._lock:
             self._states[backend_id] = state
             self._accepted_reports += 1
@@ -147,9 +167,105 @@ class WorkerMetricStore:
             "backends": backends,
         }
 
+    def metrics_exposition(self, now: Optional[float] = None) -> str:
+        """渲染 Prometheus 文本暴露格式；不引入第三方依赖。
 
-def make_http_handler(store: WorkerMetricStore, token: str = ""):
-    """创建只读 HTTP Handler；有 Token 时保护指标接口。"""
+        指标口径：accepted/rejected 是累计 Counter；backends_total/fresh 是
+        聚合 Gauge；每个白名单 backend 都会输出一行（无状态记 0），保证
+        Prometheus 图表在 Worker 掉线时序列不断开。
+        """
+        snapshot = self.snapshot(now)
+
+        lines = []
+
+        def emit(name, mtype, help_text, samples):
+            lines.append("# HELP {} {}".format(name, help_text))
+            lines.append("# TYPE {} {}".format(name, mtype))
+            for labels, value in samples:
+                lines.append("{}{} {}".format(name, labels, value))
+
+        emit(
+            "kube_orchestrator_metrics_reports_accepted_total",
+            "counter",
+            "Metrics reports accepted by the receiver.",
+            [("", snapshot["accepted_reports"])],
+        )
+        emit(
+            "kube_orchestrator_metrics_reports_rejected_total",
+            "counter",
+            "Metrics reports rejected by the receiver.",
+            [("", snapshot["rejected_reports"])],
+        )
+        fresh_count = sum(1 for item in snapshot["backends"] if item["fresh"])
+        emit(
+            "kube_orchestrator_receiver_backends_total",
+            "gauge",
+            "Whitelisted backend slots known to the receiver.",
+            [("", len(snapshot["backends"]))],
+        )
+        emit(
+            "kube_orchestrator_receiver_backends_fresh",
+            "gauge",
+            "Backends whose latest report is within the stale window.",
+            [("", fresh_count)],
+        )
+
+        def per_backend(field):
+            return [
+                (
+                    '{{backend_id="{0}"}}'.format(item["backend_id"]),
+                    item.get(field, 0),
+                )
+                for item in snapshot["backends"]
+            ]
+
+        emit(
+            "kube_orchestrator_worker_queue_depth",
+            "gauge",
+            "Latest reported queue depth per backend slot.",
+            per_backend("queue_depth"),
+        )
+        emit(
+            "kube_orchestrator_worker_fresh",
+            "gauge",
+            "1 if the backend's latest report is fresh, else 0.",
+            [
+                (
+                    '{{backend_id="{0}"}}'.format(item["backend_id"]),
+                    1 if item["fresh"] else 0,
+                )
+                for item in snapshot["backends"]
+            ],
+        )
+        emit(
+            "kube_orchestrator_worker_completed_tasks",
+            "gauge",
+            "Completed tasks reported by each backend.",
+            per_backend("completed_tasks"),
+        )
+        return "\n".join(lines) + "\n"
+
+
+def load_dashboard_html() -> str:
+    """加载可视化面板（dashboard/index.html）；文件缺失时返回最小占位页，不影响指标接口。"""
+    path = Path(__file__).resolve().parent.parent / "dashboard" / "index.html"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return (
+            "<!DOCTYPE html><html lang=\"zh-CN\"><meta charset=\"utf-8\">"
+            "<body style=\"background:#0b1020;color:#e6ebf5;font-family:sans-serif\">"
+            "<h2>dashboard/index.html 缺失</h2>"
+            "<p>请确认 dashboard/index.html 存在。</p></body></html>"
+        )
+
+
+def make_http_handler(store: WorkerMetricStore, token: str = "", dashboard_html=None):
+    """创建只读 HTTP Handler；有 Token 时保护指标接口；/dashboard 提供可视化面板。
+
+    dashboard_html 为 None 时每次请求动态读取 dashboard/index.html，
+    便于开发期修改面板后直接刷新；传入字符串则固定返回该内容（测试注入用）。
+    """
 
     class MetricsHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -163,14 +279,47 @@ def make_http_handler(store: WorkerMetricStore, token: str = ""):
             self.end_headers()
             self.wfile.write(body)
 
+        def send_text(self, text: str, content_type: str, status: int = 200) -> None:
+            body = text.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def send_html(self, content: str, status: int = 200) -> None:
+            self.send_text(content, "text/html; charset=utf-8", status)
+
         def authorized(self) -> bool:
-            return not token or self.headers.get("X-Metrics-Token", "") == token
+            if not token:
+                return True
+            # 兼容两种鉴权头：自研链路用 X-Metrics-Token；
+            # Prometheus ServiceMonitor 标准方式是 Authorization: Bearer。
+            if self.headers.get("X-Metrics-Token", "") == token:
+                return True
+            return self.headers.get("Authorization", "") == "Bearer {}".format(token)
 
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/health":
                 health = store.health()
                 self.send_json(health, 200 if health["udp_ready"] else 503)
+                return
+            if path in ("/", "/dashboard"):
+                content = (
+                    dashboard_html if dashboard_html is not None
+                    else load_dashboard_html()
+                )
+                self.send_html(content)
+                return
+            if path == "/metrics":
+                if not self.authorized():
+                    self.send_json({"ok": False, "error": "unauthorized"}, 403)
+                    return
+                self.send_text(
+                    store.metrics_exposition(),
+                    "text/plain; version=0.0.4; charset=utf-8",
+                )
                 return
             if path == "/v1/backends":
                 if not self.authorized():
