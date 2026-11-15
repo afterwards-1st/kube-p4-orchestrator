@@ -100,10 +100,15 @@ build_and_load "$CONTROLLER_IMAGE" "$REPO_ROOT" /tmp/e2e-build-controller.log
 build_and_load "$AGENT_IMAGE" "$REPO_ROOT/agent" /tmp/e2e-build-agent.log
 
 LAST_STEP="[3/7] helm 安装"; log_step "[3/7] Helm 安装三组件（plan 门禁）..."
-helm upgrade --install "$RELEASE" "$REPO_ROOT/charts/kube-orchestrator" \
-  --create-namespace -n "$NAMESPACE" \
-  -f "$REPO_ROOT/scripts/e2e/values-kind.yaml" \
-  --wait --timeout 240s >/dev/null
+if ! helm upgrade --install "$RELEASE" "$REPO_ROOT/charts/kube-orchestrator" \
+    --create-namespace -n "$NAMESPACE" \
+    -f "$REPO_ROOT/scripts/e2e/values-kind.yaml" \
+    --wait --timeout 240s > /tmp/e2e-helm.log 2>&1; then
+  annotate error "pods: $(kubectl get pods -A --no-headers 2>&1 | head -15 | tr '\n' '|' | cut -c1-700)"
+  annotate error "helm install: $(tail -20 /tmp/e2e-helm.log | tr '\n' ' ' | cut -c1-800)"
+  tail -30 /tmp/e2e-helm.log >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
+  fail "helm 安装 --wait 超时或失败"
+fi
 
 LAST_STEP="[4/7] 等待组件"; log_step "[4/7] 等待组件就绪 ..."
 kubectl -n "$NAMESPACE" wait --for=condition=available \
