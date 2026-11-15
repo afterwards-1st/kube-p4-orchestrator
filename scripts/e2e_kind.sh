@@ -105,6 +105,9 @@ if ! helm upgrade --install "$RELEASE" "$REPO_ROOT/charts/kube-orchestrator" \
     -f "$REPO_ROOT/scripts/e2e/values-kind.yaml" \
     --wait --timeout 240s > /tmp/e2e-helm.log 2>&1; then
   annotate error "pods: $(kubectl get pods -A --no-headers 2>&1 | head -15 | tr '\n' '|' | cut -c1-700)"
+  annotate error "pull-msg: $(kubectl get pods -A -o json 2>/dev/null | jq -r '[.items[] | select(.status.containerStatuses[]?.state.waiting.message != null) | {n: .metadata.name, m: .status.containerStatuses[].state.waiting.message}] | tostring' | cut -c1-800)"
+  annotate error "events: $(kubectl get events -A --sort-by=.metadata.creationTimestamp 2>/dev/null | tail -10 | tr '\n' '|' | cut -c1-800)"
+  annotate error "docker-imgs: $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -E 'e2e|orchestrator' | tr '\n' '|' | cut -c1-300)"
   annotate error "helm install: $(tail -20 /tmp/e2e-helm.log | tr '\n' ' ' | cut -c1-800)"
   tail -30 /tmp/e2e-helm.log >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
   fail "helm 安装 --wait 超时或失败"
