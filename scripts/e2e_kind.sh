@@ -17,7 +17,27 @@ FULLNAME="${RELEASE}-kube-orchestrator"
 RECEIVER_DEPLOY="${FULLNAME}-metrics-receiver"
 TASK_NAME="multi-worker-kind"
 
-fail() { echo "E2E-FAIL: $*" >&2; exit 1; }
+fail() {
+  echo "E2E-FAIL: $*" >&2
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo "### E2E 失败点"
+      echo ""
+      echo "$*"
+      echo ""
+      echo "### 集群诊断"
+      echo ""
+      echo '```'
+      kubectl get pods -A -o wide 2>&1 | head -30 || true
+      echo ""
+      kubectl -n "$NAMESPACE" logs deploy/"$RECEIVER_DEPLOY" --tail=40 2>&1 | tail -40 || true
+      echo ""
+      kubectl -n "$NAMESPACE" get computetask -o yaml 2>&1 | tail -80 || true
+      echo '```'
+    } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+  fi
+  exit 1
+}
 need() { command -v "$1" >/dev/null 2>&1 || fail "缺少工具: $1"; }
 need docker
 need kind
@@ -73,7 +93,12 @@ for _ in $(seq 1 60); do
   fi
   sleep 2
 done
-[[ -n "$PLANNED" ]] || fail "ComputeTask 120 秒内未进入 Planned（phase=$PHASE）"
+if [[ -z "$PLANNED" ]]; then
+  CONTROLLER_LOGS="$(kubectl -n "$NAMESPACE" logs deploy/"$RELEASE-kube-orchestrator-controller" --tail=60 2>&1 | tail -60 || true)"
+  fail "ComputeTask 120 秒内未进入 Planned（phase=$PHASE）
+=== controller 日志尾部 ===
+$CONTROLLER_LOGS"
+fi
 TASK_JSON="$(kubectl -n "$NAMESPACE" get computetask "$TASK_NAME" -o json)"
 SELECTED="$(jq '.status.selectedWorkers | length' <<<"$TASK_JSON")"
 [[ "$SELECTED" -eq 2 ]] || fail "selectedWorkers 期望 2，实际 $SELECTED"

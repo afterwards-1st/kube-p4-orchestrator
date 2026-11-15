@@ -52,11 +52,21 @@ jobs:
         env:
           CONTROLLER_IMAGE: kube-orchestrator:ci
           AGENT_IMAGE: kube-orchestrator/node-agent:ci
-      - name: 失败时导出控制器日志
+      - name: 失败时导出诊断（写入 Job Summary，匿名可见）
         if: failure()
         run: |
-          kubectl -n kube-orchestrator logs deploy/kube-orch-kube-orchestrator-controller || true
-          kubectl -n kube-orchestrator get computetask -o yaml || true
+          {
+            echo "### kind e2e 诊断"
+            echo '```'
+            kubectl get pods -A -o wide 2>&1 | head -30
+            echo ""
+            kubectl -n kube-orchestrator logs deploy/kube-orch-kube-orchestrator-controller --tail=80 2>&1 | tail -80
+            echo ""
+            kubectl -n kube-orchestrator get computetask -o yaml 2>&1 | tail -100
+            echo ""
+            kubectl -n default get pods -o wide 2>&1 | head -12
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
 
   images:
     name: 构建并推送镜像（main）
@@ -70,8 +80,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: 计算小写镜像名
         run: |
-          echo "CONTROLLER_IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          echo "AGENT_IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')/node-agent:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          REPO_LC="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "CONTROLLER_IMAGE=ghcr.io/${REPO_LC}:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          # GHCR 对 GITHUB_TOKEN 的嵌套路径（owner/repo/sub）推送不可靠，统一用中划线单段命名
+          echo "AGENT_IMAGE=ghcr.io/${REPO_LC}-node-agent:${GITHUB_SHA::7}" >> "$GITHUB_ENV"
       - name: 登录 GHCR
         uses: docker/login-action@v3
         with:
@@ -84,5 +96,11 @@ jobs:
           docker push "$CONTROLLER_IMAGE"
       - name: 构建并推送 node-agent 镜像
         run: |
-          docker build -t "$AGENT_IMAGE" agent
-          docker push "$AGENT_IMAGE"
+          if ! docker build -t "$AGENT_IMAGE" agent 2>&1 | tee /tmp/agent-build.log; then
+            { echo "### node-agent 构建失败"; echo '```'; tail -30 /tmp/agent-build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+            exit 1
+          fi
+          if ! docker push "$AGENT_IMAGE" 2>&1 | tee /tmp/agent-push.log; then
+            { echo "### node-agent 推送失败"; echo '```'; tail -20 /tmp/agent-push.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+            exit 1
+          fi
