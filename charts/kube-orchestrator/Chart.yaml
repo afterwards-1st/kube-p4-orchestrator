@@ -1,0 +1,14 @@
+apiVersion: v2
+name: kube-orchestrator
+description: 基于 Kubernetes CRD 的任务编排与节点指标采集系统（controller + metrics-receiver + C++ node-agent）
+type: application
+version: 0.1.0
+appVersion: "0.5.2"
+maintainers:
+  - name: kube-p4-orchestrator
+keywords:
+  - kubernetes
+  - operator
+  - scheduling
+  - p4
+  - metrics

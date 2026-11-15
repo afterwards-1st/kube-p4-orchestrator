@@ -1,0 +1,115 @@
+# kube-orchestrator 统一交付配置。
+# 三组件：controller（调度控制器）、metrics-receiver（指标接收/HTTP API/面板）、
+# node-agent（C++ 节点指标 agent，DaemonSet）。
+# 组件都可通过 enabled 开关；默认全部开启，与 manifests/ 裸 YAML 等价。
+
+controller:
+  enabled: true
+  image:
+    repository: kube-orchestrator
+    tag: "0.5.2"
+    pullPolicy: IfNotPresent
+  # plan 只生成调度方案写入 Status；apply 才会创建 Job（生产慎用）
+  executionMode: plan
+  p4RoutingMode: plan
+  p4RouteOwner: p4-routing-demo
+  p4ControlUrl: "http://192.168.199.114:18100"
+  p4ControlTimeoutSeconds: "2"
+  p4StatusCacheSeconds: "5"
+  excludedNodes: ""
+  workerNamespace: default
+  workerSlots: "216,217,218,226,227,228"
+  runtimeMetricsTimeoutSeconds: "2"
+  resourceRefreshSeconds: "15"
+  metricsPollSeconds: "2"
+  nodeSelector: {}
+  tolerations: []
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+metricsReceiver:
+  enabled: true
+  image:
+    repository: kube-orchestrator
+    tag: "0.5.2"
+    pullPolicy: IfNotPresent
+  workerSlots: "216,217,218,226,227,228"
+  staleAfterSeconds: "3"
+  udpPort: 9999
+  httpPort: 8080
+  serviceType: ClusterIP
+  auth:
+    # true 时由 Chart 创建 metrics-receiver-auth Secret；已有 Secret 时填 existingSecret 跳过
+    create: true
+    token: "change-me-in-production"
+    existingSecret: ""
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+nodeAgent:
+  enabled: true
+  image:
+    repository: kube-orchestrator/node-agent
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  # 每个节点应只上报自己承载的槽位，且必须是 receiver workerSlots 的子集；
+  # 多节点集群请按节点分批安装（每节点一个 release）或使用 per-node values。
+  backendIds: "216"
+  reportIntervalMs: 200
+  statusFile: ""
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 32Mi
+
+auth:
+  # p4-control-auth Secret（plan 模式不会真正访问 P4 控制器，但 Secret 必须存在）
+  p4ControlToken: "change-me-in-production"
+
+resourceQuota:
+  enabled: true
+  hard:
+    requests.cpu: "500m"
+    requests.memory: 512Mi
+    limits.cpu: "1"
+    limits.memory: 1Gi
+    pods: "5"
+
+# 静态指标基线（动态上报会按 backend 覆盖 queue_depth）
+runtimeMetrics:
+  config: |
+    {
+      "default": {
+        "service_rate_tasks_per_sec": 80,
+        "queue_depth": 0,
+        "network_latency_ms": 1,
+        "batch_size": 16,
+        "batch_timeout_ms": 5000
+      },
+      "backends": {
+        "216": {"service_rate_tasks_per_sec": 100},
+        "217": {"service_rate_tasks_per_sec": 100},
+        "218": {"service_rate_tasks_per_sec": 100},
+        "226": {"service_rate_tasks_per_sec": 75},
+        "227": {"service_rate_tasks_per_sec": 75},
+        "228": {"service_rate_tasks_per_sec": 75}
+      }
+    }
+
+serviceMonitor:
+  # 需要 prometheus-operator CRD；开启后由 Prometheus 按 Bearer Token 抓取 /metrics
+  enabled: false
+  interval: 15s

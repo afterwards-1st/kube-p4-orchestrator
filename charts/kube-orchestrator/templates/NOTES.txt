@@ -1,0 +1,19 @@
+安装完成。
+
+组件状态：
+  kubectl -n {{ .Release.Namespace }} get deploy,ds,pods -l app.kubernetes.io/part-of=kube-orchestrator
+
+可视化面板（本地）：
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kube-orchestrator.metricsReceiverName" . }} 8080:{{ .Values.metricsReceiver.httpPort }}
+  # 浏览器打开 http://127.0.0.1:8080/dashboard
+  # 指标接口：/v1/backends；Prometheus 指标：/metrics（需 Token）
+
+Prometheus 指标示例：
+  kube_orchestrator_metrics_reports_accepted_total
+  kube_orchestrator_worker_queue_depth{backend_id="216"}
+
+注意：
+  1. Worker Pod（带 slot 标签）部署在 {{ .Values.controller.workerNamespace }} 命名空间，
+     由 WORKER_SLOTS={{ .Values.controller.workerSlots }} 白名单约束。
+  2. node-agent 每个节点只能上报自己承载的槽位（AGENT_BACKEND_IDS）。
+  3. EXECUTION_MODE={{ .Values.controller.executionMode }}：plan 模式只写 Status，不创建 Job。

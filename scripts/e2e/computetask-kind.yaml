@@ -1,0 +1,17 @@
+# kind 端到端验证用 ComputeTask：需求恰好需要 2 个 e2e Worker 合力满足。
+# plan 门禁下只生成调度方案写入 Status，不创建 Job、不触碰 P4。
+apiVersion: orchestrator.wzt.io/v1alpha1
+kind: ComputeTask
+metadata:
+  name: multi-worker-kind
+  namespace: kube-orchestrator
+spec:
+  image: busybox:1.36
+  execution: plan
+  strategy: minExpectedCompletionTime
+  taskCount: 64
+  maxWorkers: 2
+  resources:
+    cpu: "1"
+    memory: 512Mi
+  workerSelector: {}

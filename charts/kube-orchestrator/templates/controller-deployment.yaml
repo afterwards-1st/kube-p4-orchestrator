@@ -1,0 +1,98 @@
+{{- if .Values.controller.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kube-orchestrator.controllerName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: kube-orchestrator
+    app.kubernetes.io/component: controller
+    {{- include "kube-orchestrator.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # 控制器状态在内存中，Recreate 避免滚动期间双实例重复 reconcile
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-orchestrator
+      app.kubernetes.io/component: controller
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-orchestrator
+        app.kubernetes.io/component: controller
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "kube-orchestrator.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kube-orchestrator.controllerName" . }}
+      automountServiceAccountToken: true
+      {{- with .Values.controller.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.controller.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: controller
+          image: {{ include "kube-orchestrator.image" (dict "image" .Values.controller.image) }}
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
+          volumeMounts:
+            - name: runtime-metrics
+              mountPath: /etc/kube-orchestrator
+              readOnly: true
+          env:
+            - name: WATCH_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: EXECUTION_MODE
+              value: {{ .Values.controller.executionMode | quote }}
+            - name: EXCLUDED_NODES
+              value: {{ .Values.controller.excludedNodes | quote }}
+            - name: WORKER_NAMESPACE
+              value: {{ .Values.controller.workerNamespace | quote }}
+            - name: WORKER_SLOTS
+              value: {{ .Values.controller.workerSlots | quote }}
+            - name: RUNTIME_METRICS_PATH
+              value: /etc/kube-orchestrator/runtime_metrics.json
+            - name: RUNTIME_METRICS_URL
+              value: http://{{ include "kube-orchestrator.metricsReceiverName" . }}:{{ .Values.metricsReceiver.httpPort }}/v1/backends
+            {{- if or .Values.metricsReceiver.auth.create .Values.metricsReceiver.auth.existingSecret }}
+            - name: RUNTIME_METRICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default "metrics-receiver-auth" .Values.metricsReceiver.auth.existingSecret }}
+                  key: {{ default "token" .Values.metricsReceiver.auth.existingSecretKey }}
+            {{- end }}
+            - name: RUNTIME_METRICS_TIMEOUT_SECONDS
+              value: {{ .Values.controller.runtimeMetricsTimeoutSeconds | quote }}
+            - name: P4_ROUTING_MODE
+              value: {{ .Values.controller.p4RoutingMode | quote }}
+            - name: P4_ROUTE_OWNER
+              value: {{ .Values.controller.p4RouteOwner | quote }}
+            - name: P4_CONTROL_URL
+              value: {{ .Values.controller.p4ControlUrl | quote }}
+            - name: P4_CONTROL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: p4-control-auth
+                  key: token
+            - name: P4_CONTROL_TIMEOUT_SECONDS
+              value: {{ .Values.controller.p4ControlTimeoutSeconds | quote }}
+            - name: P4_STATUS_CACHE_SECONDS
+              value: {{ .Values.controller.p4StatusCacheSeconds | quote }}
+            - name: RESOURCE_REFRESH_SECONDS
+              value: {{ .Values.controller.resourceRefreshSeconds | quote }}
+            - name: METRICS_POLL_SECONDS
+              value: {{ .Values.controller.metricsPollSeconds | quote }}
+          resources:
+            {{- toYaml .Values.controller.resources | nindent 12 }}
+      volumes:
+        - name: runtime-metrics
+          configMap:
+            name: {{ include "kube-orchestrator.fullname" . }}-runtime-metrics
+{{- end }}

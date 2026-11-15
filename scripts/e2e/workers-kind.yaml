@@ -1,0 +1,99 @@
+# kind 端到端验证用的假 Worker：只用 busybox 提供 /health、/ready 探针，
+# 靠 resources.requests 让控制器读到 0.5 核 / 0.25 Gi 的容量。
+# 两个 Worker 单独都不满足 ComputeTask(cpu=1, memory=512Mi)，合并后恰好满足，
+# 用于验证"必须跨 Worker 组合"的调度语义。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-worker-216
+  namespace: default
+  labels:
+    app: kube-p4-e2e-worker
+    slot: "216"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-p4-e2e-worker
+      slot: "216"
+  template:
+    metadata:
+      labels:
+        app: kube-p4-e2e-worker
+        slot: "216"
+    spec:
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "mkdir -p /www && : > /www/health && : > /www/ready && exec busybox httpd -f -p 8081 -h /www"
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            periodSeconds: 2
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 256Mi
+            limits:
+              cpu: "500m"
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-worker-217
+  namespace: default
+  labels:
+    app: kube-p4-e2e-worker
+    slot: "217"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-p4-e2e-worker
+      slot: "217"
+  template:
+    metadata:
+      labels:
+        app: kube-p4-e2e-worker
+        slot: "217"
+    spec:
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "mkdir -p /www && : > /www/health && : > /www/ready && exec busybox httpd -f -p 8081 -h /www"
+          ports:
+            - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            periodSeconds: 2
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 256Mi
+            limits:
+              cpu: "500m"
+              memory: 256Mi

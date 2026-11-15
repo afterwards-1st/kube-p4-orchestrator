@@ -1,0 +1,14 @@
+# kind 端到端验证的 Helm values 覆盖：镜像指向本地构建并 kind load 的 e2e 标签，
+# Worker 槽位与 agent 上报对齐为 216/217。
+controller:
+  image:
+    tag: e2e
+  workerSlots: "216,217"
+metricsReceiver:
+  image:
+    tag: e2e
+  workerSlots: "216,217"
+nodeAgent:
+  image:
+    tag: e2e
+  backendIds: "216,217"

@@ -1,0 +1,64 @@
+{{- if and .Values.nodeAgent.enabled .Values.metricsReceiver.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "kube-orchestrator.nodeAgentName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: node-agent
+    app.kubernetes.io/component: node-agent
+    {{- include "kube-orchestrator.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-agent
+      app.kubernetes.io/component: node-agent
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: node-agent
+        app.kubernetes.io/component: node-agent
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "kube-orchestrator.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 5
+      containers:
+        - name: node-agent
+          image: {{ include "kube-orchestrator.image" (dict "image" .Values.nodeAgent.image) }}
+          imagePullPolicy: {{ .Values.nodeAgent.image.pullPolicy }}
+          env:
+            - name: AGENT_BACKEND_IDS
+              # 须是 receiver WORKER_SLOTS 白名单的子集；多节点时按节点拆分
+              value: {{ .Values.nodeAgent.backendIds | quote }}
+            - name: AGENT_REPORT_HOST
+              value: {{ include "kube-orchestrator.metricsReceiverName" . }}
+            - name: AGENT_REPORT_PORT
+              value: {{ .Values.metricsReceiver.udpPort | quote }}
+            - name: AGENT_REPORT_INTERVAL_MS
+              value: {{ .Values.nodeAgent.reportIntervalMs | quote }}
+            {{- if .Values.nodeAgent.statusFile }}
+            - name: AGENT_STATUS_FILE
+              value: {{ .Values.nodeAgent.statusFile | quote }}
+            {{- end }}
+          livenessProbe:
+            exec:
+              command: ["/node_agent", "--selfcheck"]
+            initialDelaySeconds: 2
+            periodSeconds: 15
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.nodeAgent.resources | nindent 12 }}
+          securityContext:
+            {{- include "kube-orchestrator.securityContext" . | nindent 12 }}
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+{{- end }}
